@@ -14,12 +14,10 @@ dependencies:
   flutter_bloc: ^9.0.0
   equatable: ^2.0.5
 
-  # Persistence
-  drift: ^2.21.0
-  sqlite3: ^2.4.6
-  sqlite3_flutter_libs: ^0.5.24
-  path: ^1.9.0
-  path_provider: ^2.1.4
+  # Persistence — drift_flutter bundles sqlite3, sqlite3_flutter_libs,
+  # path, and path_provider transitively for the standard mobile setup.
+  drift: ^2.32.0
+  drift_flutter: ^0.3.0
 
   # Domain libs
   fsrs: ^2.0.0
@@ -40,7 +38,7 @@ dev_dependencies:
 
   # Codegen
   build_runner: ^2.4.13
-  drift_dev: ^2.21.0
+  drift_dev: ^2.32.0
   freezed: ^3.0.0
   json_serializable: ^6.8.0
 
