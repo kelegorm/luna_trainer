@@ -1014,11 +1014,15 @@ Solver.availableDeductions(p):
 
 #### U7 amendment — difficulty fields + резолюция collision на `mode` (R34, R36, R38)
 
+> **Breaking change to R31 plan.** Первый addendum (R29–R33) на U7 добавлял `mode TEXT` для propagation/hunt без явного решения collision со старой `move_events.mode` (full_game/drill из U3 baseline). Этот amendment **финализирует** резолюцию: старая колонка дропается, имя `mode` переиспользуется под propagation/hunt. Имплементатор R29/R31 должен читать обе amendment-секции **вместе** — нет отдельной «old-mode-only» миграции.
+
 **Изменение схемы (расширяет U7 schema v2-миграцию из R29/R31):**
 
 - Добавить в `move_events`: `difficulty_band INTEGER NOT NULL DEFAULT 2` (R36), `user_adjusted INTEGER NOT NULL DEFAULT 0` (R38; sqlite-bool как INTEGER 0/1).
 - Добавить в `sessions`: `difficulty_band INTEGER NOT NULL DEFAULT 2`, `user_adjusted INTEGER NOT NULL DEFAULT 0`. Это authoritative-источник для партии; MoveEvent-ы наследуют их при записи (UI/Bloc копирует из current session-row).
-- **Резолюция collision на `move_events.mode`:** старая колонка `mode` (full_game / drill) дропается из v2-схемы — она дублирует `sessions.mode` (можно получить через JOIN, на текущих data-volumes стоимость ничтожна). Новая колонка `mode TEXT NULL` (из R31 amendment) несёт **исключительно** propagation/hunt семантику. Greenfield-обоснование: Phase A/B engine-кода MoveEvent ещё не пишет, существующих рядов нет, drop безопасен. Технически миграция v1→v2 формирует новый `move_events` без поля 'full_game'/'drill' — drift `MigrationStrategy.onUpgrade` через `m.alterTable(TableMigration(...))` или (если drift не умеет drop column в одной транзакции) через `recreate-and-copy` рецепт из drift docs.
+- **Резолюция collision на `move_events.mode`:** старая колонка `mode` (full_game / drill из U3 baseline) дропается — она дублирует `sessions.mode` (получается через JOIN, на текущих data-volumes стоимость ничтожна). Новая колонка `mode TEXT NULL` несёт **исключительно** propagation/hunt семантику (R31).
+- **Migration recipe (greenfield, no rows):** Поскольку Phase A/B engine MoveEvent ещё не пишет, в `move_events` рядов нет — самый безопасный путь не `TableMigration` с `columnTransformer` (риск молчаливого копирования старых 'full_game'/'drill' строк в новую mode-колонку), а **`m.deleteTable('move_events'); m.createTable(moveEvents);`** в `MigrationStrategy.onUpgrade`. Drop-and-recreate на пустой таблице — атомарен, без data-copy, без ambiguity. Drift умеет это нативно через `Migrator` API. (Drift также поддерживает `alterTable(TableMigration(...))` — ОК для будущих data-bearing миграций; для v1→v2 проще drop-and-recreate.)
+- **SQLite version:** non-issue — `drift_flutter` бандлит `sqlite3_flutter_libs` (~3.45+), Android OS sqlite не используется. Drop column / DDL — supported.
 - Документировать в Dart-комментарии на `move_events.mode`: «'propagation' | 'hunt' (R31). Партионный режим (full_game/drill) живёт в `sessions.mode`».
 
 **Files (расширение U7):**
@@ -1048,7 +1052,7 @@ Solver.availableDeductions(p):
 **Files:**
 - Create: `lib/puzzles/tango/generator/difficulty_band.dart` — `enum DifficultyBand { easy=1, medium=2, hard=3 }`, `DifficultyBand clamp(int)`, `DifficultyBand bumpUp()`, `DifficultyBand bumpDown()`.
 - Create: `lib/puzzles/tango/generator/band_to_params_mapper.dart` — pure function `mapToParams(band) → GenerationParams { density, signDensity, requiredTechniques }`. Стартовые численные пороги — Deferred to Implementation, документируются inline-комментарием.
-- Modify: `lib/puzzles/tango/generator/tango_level_generator.dart` — `generate(...)` принимает опциональный `DifficultyBand band`. Если задан — overrides `TargetMix` через `BandToParamsMapper` и проверяет, что solver на сгенерированной позиции **фактически** требует ≥1 технику из `requiredTechniques`. Cap = 200 attempts (как в U6).
+- Modify: `lib/puzzles/tango/generator/tango_level_generator.dart` — `generate(...)` принимает опциональный `DifficultyBand band`. Если задан — overrides `TargetMix` через `BandToParamsMapper` и применяет **steered removal** (см. Approach), а не random-retry. Cap = 200 outer attempts.
 - Modify: `lib/puzzles/tango/generator/diversity_filter.dart` — расширить API параметром `recentSignatures: List<String>` (последние 10 в БД по filter band) и `previousBandSignature: String?`. Гарантия `validateHorizonOf10`: на 10 последовательных partial-mocked генерациях ≥6 различных signatures, иначе force-reroll.
 - Test: `test/puzzles/tango/generator/band_to_params_mapper_test.dart`.
 - Test: `test/puzzles/tango/generator/diversity_filter_test.dart` (расширение).
@@ -1059,7 +1063,12 @@ Solver.availableDeductions(p):
   - band=1 (easy): density ≈ 0.55, sign_density ≈ 0.35, required_techniques ⊇ {PairCompletion, TrioAvoidance, ParityFill}.
   - band=2 (medium): density ≈ 0.40, sign_density ≈ 0.25, required_techniques ⊇ base + {SignPropagation}.
   - band=3 (hard): density ≈ 0.25, sign_density ≈ 0.15, required_techniques ⊇ base + {AdvancedMidLineInference} ИЛИ {ChainExtension}.
-- **Generator-loop:** после standard solve-then-remove → solver runs → собираем `actually_used_techniques`. Если `requiredTechniques ⊄ actually_used` → discard, retry. Cap = 200; на превышении — log warning, return best-effort.
+- **Generator-loop (steered removal вместо random-retry):**
+  1. Seed случайной валидной solved-позицией.
+  2. Identify-step: для каждой кандидатной clue (стартовой метки/знака) посчитать, форсирует ли её удаление какой-либо technique из `requiredTechniques` band-а. Использовать solver для оценки: если после удаления данной clue solver вынужден применить требуемую technique для уникального решения — clue tagged as «required-forcing».
+  3. Bias removal: на каждой итерации remove-цикла приоритетно удалять clue из required-forcing-set (если непустое); fallback на random clue если set пустой.
+  4. После сходимости (puzzle минимально-решаемый) — final solver-run собирает `actually_used_techniques`. Если `requiredTechniques ⊄ actually_used` → discard и retry с новым seed. Cap = 200 outer attempts; при превышении — log warning, return best-effort с `mix_drift > tolerance` флагом (та же семантика что в U6).
+  5. **Rationale:** random-retry на band=3 почти не сходится — AdvancedMidLineInference / ChainExtension редко возникают самопроизвольно. Steered removal даёт целевую вероятность convergence.
 - **Variety threshold definition** (Deferred to Implementation): стартово signature = exact-match по hash{позиции seed-меток + позиции `=`/`×`}. Variety filter scans `recentSignatures` (последние 10 на этого пользователя из `sessions` JOIN preview-data) и при collision force-reroll. Если за 10 generation-attempts по diversity не получили unique → отдаём с warning.
 - **Variety horizon-проверка:** сервис `_verifyVarietyHorizon(last10Signatures) → bool` — true если уникальных ≥ 6.
 
@@ -1067,6 +1076,8 @@ Solver.availableDeductions(p):
 - Happy path AE11: `generate(band=2)` → solver на результирующей позиции применяет ≥1 раз SignPropagation (R35 mapping).
 - Happy path band=1: density сгенерированной позиции ≥ 0.45, required_techniques НЕ требует AdvancedMidLineInference.
 - Happy path band=3: density ≤ 0.30, required_techniques обязательно покрывает {AdvancedMidLineInference} ∪ {ChainExtension}.
+- **Convergence assertion (band=3 critical):** 100 generations с band=3 → ≥80% результирующих puzzle включают AdvancedMidLineInference ИЛИ ChainExtension в `actually_used_techniques` (R35 promise не должен silent-fail-ить через cap-exceed). Если <80% — это сигнал, что mapping или steered removal требуют тюнинга (фиксируется как failure теста).
+- **Convergence assertion band=1/2:** 100 generations каждого band → ≥95% попадают в required_techniques (для band=1/2 техники типичные, ≥95% реалистично).
 - Edge case AE13: 10 partial-mocked generations с разными band-ами → `_verifyVarietyHorizon(signatures)` → ≥ 6 уникальных. Не должно быть «5 одинаковых форм подряд».
 - Edge case: band=2, recentSignatures содержит 9 копий signature `s1` → `generate(band=2)` принудительно отвергает rolls, дающие `s1`, продолжает до уникального. Cap=200 не превышен на разумных random-seeds.
 - Edge case: 2 sequential `generate(band=2)` подряд → signature[0] != signature[1] (R39 базовая гарантия).
@@ -1081,19 +1092,20 @@ Solver.availableDeductions(p):
 **Изменение основной логики full-game flow (расширение U11):**
 
 **Дополнительные Files:**
-- Create: `lib/features/full_game/band_rotator.dart` — выбирает следующий `DifficultyBand` для авто-«Следующая». Стартовый алгоритм: round-robin {1, 2, 3} с ±1 jitter (избегаем deterministic чередования). Алгоритм — Deferred to Implementation, пересмотр после 2 недель.
+- Create: `lib/features/full_game/band_rotator.dart` — выбирает следующий `DifficultyBand` для авто-«Следующая». Стартовый алгоритм: round-robin {1, 2, 3} с ±1 jitter (избегаем deterministic чередования). State **hydrate-ится lazy** из `sessionsRepository.recentBands(limit: 5)` при первом вызове `next()` (Android process-kill safe). Алгоритм — Deferred to Implementation, пересмотр после 2 недель.
 - Create: `lib/features/summary/widgets/post_session_actions.dart` — 4 кнопки end-of-session с правильными disabled-состояниями. Цифру band **не** показывает.
 - Modify: `lib/features/full_game/bloc/full_game_bloc.dart` — `GameStarted({band, userAdjusted})`; каждый `MoveCommitted` пишет MoveEvent с этими значениями (наследует от session-row).
 - Modify: `lib/features/full_game/full_game_screen.dart` — на старте партии: `sessionsRepository.startSession(mode: full_game, band, userAdjusted)`, передать band в `TangoLevelGenerator.generate(band: ...)`.
 - Modify: `lib/features/summary/end_of_session_screen.dart` — заменить старую кнопку «Следующая партия» на `PostSessionActions` (4 кнопки).
 - Modify: `lib/features/summary/bloc/summary_bloc.dart` — events: `NextAuto`, `NextSame`, `NextHarder`, `NextEasier` → emit `NextGameRequested({band, userAdjusted})`.
+- Modify: `lib/data/repositories/sessions_repository.dart` (расширение U7) — добавить метод `recentBands({int limit = 5}) → Future<List<DifficultyBand>>` (`SELECT difficulty_band FROM sessions WHERE mode='full_game' ORDER BY started_at DESC LIMIT ?`).
 - Test: `test/features/full_game/band_rotator_test.dart`.
 - Test: `test/features/full_game/bloc/full_game_bloc_test.dart` (расширение band/user_adjusted сценариями).
 - Test: `test/features/summary/bloc/summary_bloc_test.dart` (расширение 4-кнопочными сценариями).
 - Test: `test/features/summary/widgets/post_session_actions_test.dart`.
 
 **Approach:**
-- **BandRotator:** держит in-memory state (последние 5 band-ов session-history). Round-robin с jitter — избегаем deterministic {1,2,3,1,2,3} ради subjective разнообразия. Стартовый band на cold-start = 2 (medium).
+- **BandRotator:** lazy-hydrates state из `sessionsRepository.recentBands(5)` при первом вызове `next()` после construction (это критично для Android — process-kill после background-а сбрасывает in-memory state, но БД сохраняется; без hydration round-robin invariant ломается на restart). Round-robin с jitter — избегаем deterministic {1,2,3,1,2,3} ради subjective разнообразия. Cold-start (БД пустая) → band=2 (medium).
 - **4 кнопки (R37):**
   - **«Следующая»** (auto): `band = rotator.next(currentBand)`, `user_adjusted=false`.
   - **«Ещё такую же»**: `band = current`, `user_adjusted=true`. Rotator state **не** сдвигается (следующий auto продолжается с того же места).
@@ -1108,9 +1120,10 @@ Solver.availableDeductions(p):
 - Edge AE12 (clamp): band=3, press «Сложнее ▲» → no-op (кнопка disabled, event не fires).
 - Edge AE12 (clamp): band=1, press «Легче ▼» → no-op.
 - Happy path: «Ещё такую же» band=2 → `NextGameRequested(band=2, user_adjusted=true)`. Rotator state **не** сдвинут — следующий auto «Следующая» возвращается к ротации с правильным state.
-- R34 UI invisibility: виджет-тест `PostSessionActions` — `find.text('1')`, `find.text('2')`, `find.text('3')` должны быть `findsNothing` в дереве. Только направления.
+- R34 UI invisibility: виджет-тест `PostSessionActions` (изолированное дерево, только 4 кнопки) — predicate `find.byWidgetPredicate((w) => w is Text && RegExp(r'\b[123]\b').hasMatch(w.data ?? ''))` → `findsNothing`. Покрывает любые форматы цифр (включая «band 2», «уровень 3», и т.п.) без хрупкости буквальных `find.text('1')`. Дополнительный позитивный assertion: дерево содержит ровно 4 кнопки с whitelisted-лейблами {«Следующая», «Ещё такую же», «Сложнее», «Легче»}.
 - R38 propagation: после press «Сложнее ▲» → все MoveEvent-ы новой партии имеют `user_adjusted=1` (проверяется в БД после интеграционного прогона).
 - BandRotator: для seeded random — детерминирован. Не выдаёт один и тот же band 3 раза подряд на горизонте 10.
+- **BandRotator process-kill survival:** mock `sessionsRepository.recentBands` возвращает `[2, 1, 3, 2]` → freshly-constructed `BandRotator.next(currentBand=2)` использует hydrated history, не cold-start, и возвращает band ∈ {1, 3} (не 2 — round-robin с учётом recent). Доказывает, что invariant держится после Android process-kill.
 - Drill default (R38): drill-сессии всегда пишут MoveEvent с `user_adjusted=false` (drill всегда auto; контракт с U12 / DrillBloc — никаких relative-nudge кнопок в drill).
 
 **Verification:**
