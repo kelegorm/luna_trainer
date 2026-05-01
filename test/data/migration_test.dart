@@ -5,6 +5,7 @@ import 'package:luna_traineer/data/database.dart';
 
 import 'generated_migrations/schema.dart';
 import 'generated_migrations/schema_v1.dart' as v1;
+import 'generated_migrations/schema_v2.dart' as v2;
 
 void main() {
   late SchemaVerifier verifier;
@@ -13,15 +14,15 @@ void main() {
     verifier = SchemaVerifier(GeneratedHelper());
   });
 
-  test('current schema matches v2 snapshot', () async {
-    final connection = await verifier.startAt(2);
+  test('current schema matches v3 snapshot', () async {
+    final connection = await verifier.startAt(3);
     final db = LunaDatabase.forTesting(connection);
     addTearDown(db.close);
 
-    await verifier.migrateAndValidate(db, 2);
+    await verifier.migrateAndValidate(db, 3);
   });
 
-  test('opening a fresh database creates v2 schema cleanly', () async {
+  test('opening a fresh database creates v3 schema cleanly', () async {
     final db = LunaDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
 
@@ -61,16 +62,16 @@ void main() {
     );
   });
 
-  test('v1 → v2 migration: empty db applies cleanly and matches v2 snapshot',
+  test('v1 → v3 migration: empty db applies cleanly and matches v3 snapshot',
       () async {
     final connection = await verifier.startAt(1);
     final db = LunaDatabase.forTesting(connection);
     addTearDown(db.close);
 
     // SchemaVerifier replays the registered MigrationStrategy from v1
-    // up to v2 and validates the resulting schema matches the v2
+    // up through v3 and validates the resulting schema matches the v3
     // snapshot column-for-column.
-    await verifier.migrateAndValidate(db, 2);
+    await verifier.migrateAndValidate(db, 3);
   });
 
   test('v1 → v2 migration: sessions row survives with new columns defaulting',
@@ -151,7 +152,7 @@ void main() {
     expect(after.userAdjusted, isFalse);
   });
 
-  test('v1 → v2 migration is idempotent (re-running v2 stays at v2)',
+  test('v1 → v3 migration is idempotent (re-running stays at v3)',
       () async {
     final schemaV1 = await verifier.schemaAt(1);
     final connection = schemaV1.newConnection();
@@ -162,7 +163,30 @@ void main() {
 
     final db2 = LunaDatabase.forTesting(schemaV1.newConnection());
     addTearDown(db2.close);
-    await verifier.migrateAndValidate(db2, 2);
+    await verifier.migrateAndValidate(db2, 3);
+  });
+
+  test('v2 → v3 migration: mastery_state row survives rename + new column',
+      () async {
+    final schemaV2 = await verifier.schemaAt(2);
+    final v2Db = v2.DatabaseAtV2(schemaV2.newConnection());
+    // Seed a mastery_state row at the v2 shape (column was named ewma_z).
+    await v2Db.customStatement(
+      'INSERT INTO mastery_state '
+      '(kind_id, heuristic_tag, event_count, ewma_z, last_updated_at) '
+      "VALUES ('tango', 'ParityFill', 5, 0.42, 1234)",
+    );
+    await v2Db.close();
+
+    final db = LunaDatabase.forTesting(schemaV2.newConnection());
+    addTearDown(db.close);
+
+    final row = await db.select(db.masteryState).getSingle();
+    expect(row.eventCount, 5);
+    expect(row.ewmaPercentile, closeTo(0.42, 1e-9),
+        reason: 'rename preserved value');
+    expect(row.outlierCount, 0,
+        reason: 'new column defaults to 0 for pre-v3 rows');
   });
 
   test('v2 fresh insert: defaults for new fields match plan', () async {

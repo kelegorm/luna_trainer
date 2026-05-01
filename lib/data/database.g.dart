@@ -1597,13 +1597,27 @@ class $MasteryStateTable extends MasteryState
     requiredDuringInsert: false,
     defaultValue: const Constant(0),
   );
-  static const VerificationMeta _ewmaZMeta = const VerificationMeta('ewmaZ');
+  static const VerificationMeta _ewmaPercentileMeta = const VerificationMeta(
+    'ewmaPercentile',
+  );
   @override
-  late final GeneratedColumn<double> ewmaZ = GeneratedColumn<double>(
-    'ewma_z',
+  late final GeneratedColumn<double> ewmaPercentile = GeneratedColumn<double>(
+    'ewma_percentile',
     aliasedName,
     false,
     type: DriftSqlType.double,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _outlierCountMeta = const VerificationMeta(
+    'outlierCount',
+  );
+  @override
+  late final GeneratedColumn<int> outlierCount = GeneratedColumn<int>(
+    'outlier_count',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
     requiredDuringInsert: false,
     defaultValue: const Constant(0),
   );
@@ -1707,7 +1721,8 @@ class $MasteryStateTable extends MasteryState
     kindId,
     heuristicTag,
     eventCount,
-    ewmaZ,
+    ewmaPercentile,
+    outlierCount,
     latencyP25Ms,
     latencyMedianMs,
     latencyP75Ms,
@@ -1754,10 +1769,22 @@ class $MasteryStateTable extends MasteryState
         eventCount.isAcceptableOrUnknown(data['event_count']!, _eventCountMeta),
       );
     }
-    if (data.containsKey('ewma_z')) {
+    if (data.containsKey('ewma_percentile')) {
       context.handle(
-        _ewmaZMeta,
-        ewmaZ.isAcceptableOrUnknown(data['ewma_z']!, _ewmaZMeta),
+        _ewmaPercentileMeta,
+        ewmaPercentile.isAcceptableOrUnknown(
+          data['ewma_percentile']!,
+          _ewmaPercentileMeta,
+        ),
+      );
+    }
+    if (data.containsKey('outlier_count')) {
+      context.handle(
+        _outlierCountMeta,
+        outlierCount.isAcceptableOrUnknown(
+          data['outlier_count']!,
+          _outlierCountMeta,
+        ),
       );
     }
     if (data.containsKey('latency_p25_ms')) {
@@ -1849,9 +1876,13 @@ class $MasteryStateTable extends MasteryState
         DriftSqlType.int,
         data['${effectivePrefix}event_count'],
       )!,
-      ewmaZ: attachedDatabase.typeMapping.read(
+      ewmaPercentile: attachedDatabase.typeMapping.read(
         DriftSqlType.double,
-        data['${effectivePrefix}ewma_z'],
+        data['${effectivePrefix}ewma_percentile'],
+      )!,
+      outlierCount: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}outlier_count'],
       )!,
       latencyP25Ms: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
@@ -1898,7 +1929,13 @@ class MasteryStateRow extends DataClass implements Insertable<MasteryStateRow> {
   final String kindId;
   final String heuristicTag;
   final int eventCount;
-  final double ewmaZ;
+
+  /// EWMA of per-event percentile (not z). Stored on [0, 1].
+  final double ewmaPercentile;
+
+  /// Count of events whose `|z| > 3` led to a drop (R7 outlier rule).
+  /// Diagnostic-only — does not flow into mastery score.
+  final int outlierCount;
   final int? latencyP25Ms;
   final int? latencyMedianMs;
   final int? latencyP75Ms;
@@ -1917,7 +1954,8 @@ class MasteryStateRow extends DataClass implements Insertable<MasteryStateRow> {
     required this.kindId,
     required this.heuristicTag,
     required this.eventCount,
-    required this.ewmaZ,
+    required this.ewmaPercentile,
+    required this.outlierCount,
     this.latencyP25Ms,
     this.latencyMedianMs,
     this.latencyP75Ms,
@@ -1933,7 +1971,8 @@ class MasteryStateRow extends DataClass implements Insertable<MasteryStateRow> {
     map['kind_id'] = Variable<String>(kindId);
     map['heuristic_tag'] = Variable<String>(heuristicTag);
     map['event_count'] = Variable<int>(eventCount);
-    map['ewma_z'] = Variable<double>(ewmaZ);
+    map['ewma_percentile'] = Variable<double>(ewmaPercentile);
+    map['outlier_count'] = Variable<int>(outlierCount);
     if (!nullToAbsent || latencyP25Ms != null) {
       map['latency_p25_ms'] = Variable<int>(latencyP25Ms);
     }
@@ -1956,7 +1995,8 @@ class MasteryStateRow extends DataClass implements Insertable<MasteryStateRow> {
       kindId: Value(kindId),
       heuristicTag: Value(heuristicTag),
       eventCount: Value(eventCount),
-      ewmaZ: Value(ewmaZ),
+      ewmaPercentile: Value(ewmaPercentile),
+      outlierCount: Value(outlierCount),
       latencyP25Ms: latencyP25Ms == null && nullToAbsent
           ? const Value.absent()
           : Value(latencyP25Ms),
@@ -1983,7 +2023,8 @@ class MasteryStateRow extends DataClass implements Insertable<MasteryStateRow> {
       kindId: serializer.fromJson<String>(json['kindId']),
       heuristicTag: serializer.fromJson<String>(json['heuristicTag']),
       eventCount: serializer.fromJson<int>(json['eventCount']),
-      ewmaZ: serializer.fromJson<double>(json['ewmaZ']),
+      ewmaPercentile: serializer.fromJson<double>(json['ewmaPercentile']),
+      outlierCount: serializer.fromJson<int>(json['outlierCount']),
       latencyP25Ms: serializer.fromJson<int?>(json['latencyP25Ms']),
       latencyMedianMs: serializer.fromJson<int?>(json['latencyMedianMs']),
       latencyP75Ms: serializer.fromJson<int?>(json['latencyP75Ms']),
@@ -2003,7 +2044,8 @@ class MasteryStateRow extends DataClass implements Insertable<MasteryStateRow> {
       'kindId': serializer.toJson<String>(kindId),
       'heuristicTag': serializer.toJson<String>(heuristicTag),
       'eventCount': serializer.toJson<int>(eventCount),
-      'ewmaZ': serializer.toJson<double>(ewmaZ),
+      'ewmaPercentile': serializer.toJson<double>(ewmaPercentile),
+      'outlierCount': serializer.toJson<int>(outlierCount),
       'latencyP25Ms': serializer.toJson<int?>(latencyP25Ms),
       'latencyMedianMs': serializer.toJson<int?>(latencyMedianMs),
       'latencyP75Ms': serializer.toJson<int?>(latencyP75Ms),
@@ -2019,7 +2061,8 @@ class MasteryStateRow extends DataClass implements Insertable<MasteryStateRow> {
     String? kindId,
     String? heuristicTag,
     int? eventCount,
-    double? ewmaZ,
+    double? ewmaPercentile,
+    int? outlierCount,
     Value<int?> latencyP25Ms = const Value.absent(),
     Value<int?> latencyMedianMs = const Value.absent(),
     Value<int?> latencyP75Ms = const Value.absent(),
@@ -2032,7 +2075,8 @@ class MasteryStateRow extends DataClass implements Insertable<MasteryStateRow> {
     kindId: kindId ?? this.kindId,
     heuristicTag: heuristicTag ?? this.heuristicTag,
     eventCount: eventCount ?? this.eventCount,
-    ewmaZ: ewmaZ ?? this.ewmaZ,
+    ewmaPercentile: ewmaPercentile ?? this.ewmaPercentile,
+    outlierCount: outlierCount ?? this.outlierCount,
     latencyP25Ms: latencyP25Ms.present ? latencyP25Ms.value : this.latencyP25Ms,
     latencyMedianMs: latencyMedianMs.present
         ? latencyMedianMs.value
@@ -2053,7 +2097,12 @@ class MasteryStateRow extends DataClass implements Insertable<MasteryStateRow> {
       eventCount: data.eventCount.present
           ? data.eventCount.value
           : this.eventCount,
-      ewmaZ: data.ewmaZ.present ? data.ewmaZ.value : this.ewmaZ,
+      ewmaPercentile: data.ewmaPercentile.present
+          ? data.ewmaPercentile.value
+          : this.ewmaPercentile,
+      outlierCount: data.outlierCount.present
+          ? data.outlierCount.value
+          : this.outlierCount,
       latencyP25Ms: data.latencyP25Ms.present
           ? data.latencyP25Ms.value
           : this.latencyP25Ms,
@@ -2083,7 +2132,8 @@ class MasteryStateRow extends DataClass implements Insertable<MasteryStateRow> {
           ..write('kindId: $kindId, ')
           ..write('heuristicTag: $heuristicTag, ')
           ..write('eventCount: $eventCount, ')
-          ..write('ewmaZ: $ewmaZ, ')
+          ..write('ewmaPercentile: $ewmaPercentile, ')
+          ..write('outlierCount: $outlierCount, ')
           ..write('latencyP25Ms: $latencyP25Ms, ')
           ..write('latencyMedianMs: $latencyMedianMs, ')
           ..write('latencyP75Ms: $latencyP75Ms, ')
@@ -2101,7 +2151,8 @@ class MasteryStateRow extends DataClass implements Insertable<MasteryStateRow> {
     kindId,
     heuristicTag,
     eventCount,
-    ewmaZ,
+    ewmaPercentile,
+    outlierCount,
     latencyP25Ms,
     latencyMedianMs,
     latencyP75Ms,
@@ -2118,7 +2169,8 @@ class MasteryStateRow extends DataClass implements Insertable<MasteryStateRow> {
           other.kindId == this.kindId &&
           other.heuristicTag == this.heuristicTag &&
           other.eventCount == this.eventCount &&
-          other.ewmaZ == this.ewmaZ &&
+          other.ewmaPercentile == this.ewmaPercentile &&
+          other.outlierCount == this.outlierCount &&
           other.latencyP25Ms == this.latencyP25Ms &&
           other.latencyMedianMs == this.latencyMedianMs &&
           other.latencyP75Ms == this.latencyP75Ms &&
@@ -2133,7 +2185,8 @@ class MasteryStateCompanion extends UpdateCompanion<MasteryStateRow> {
   final Value<String> kindId;
   final Value<String> heuristicTag;
   final Value<int> eventCount;
-  final Value<double> ewmaZ;
+  final Value<double> ewmaPercentile;
+  final Value<int> outlierCount;
   final Value<int?> latencyP25Ms;
   final Value<int?> latencyMedianMs;
   final Value<int?> latencyP75Ms;
@@ -2147,7 +2200,8 @@ class MasteryStateCompanion extends UpdateCompanion<MasteryStateRow> {
     this.kindId = const Value.absent(),
     this.heuristicTag = const Value.absent(),
     this.eventCount = const Value.absent(),
-    this.ewmaZ = const Value.absent(),
+    this.ewmaPercentile = const Value.absent(),
+    this.outlierCount = const Value.absent(),
     this.latencyP25Ms = const Value.absent(),
     this.latencyMedianMs = const Value.absent(),
     this.latencyP75Ms = const Value.absent(),
@@ -2162,7 +2216,8 @@ class MasteryStateCompanion extends UpdateCompanion<MasteryStateRow> {
     required String kindId,
     required String heuristicTag,
     this.eventCount = const Value.absent(),
-    this.ewmaZ = const Value.absent(),
+    this.ewmaPercentile = const Value.absent(),
+    this.outlierCount = const Value.absent(),
     this.latencyP25Ms = const Value.absent(),
     this.latencyMedianMs = const Value.absent(),
     this.latencyP75Ms = const Value.absent(),
@@ -2179,7 +2234,8 @@ class MasteryStateCompanion extends UpdateCompanion<MasteryStateRow> {
     Expression<String>? kindId,
     Expression<String>? heuristicTag,
     Expression<int>? eventCount,
-    Expression<double>? ewmaZ,
+    Expression<double>? ewmaPercentile,
+    Expression<int>? outlierCount,
     Expression<int>? latencyP25Ms,
     Expression<int>? latencyMedianMs,
     Expression<int>? latencyP75Ms,
@@ -2194,7 +2250,8 @@ class MasteryStateCompanion extends UpdateCompanion<MasteryStateRow> {
       if (kindId != null) 'kind_id': kindId,
       if (heuristicTag != null) 'heuristic_tag': heuristicTag,
       if (eventCount != null) 'event_count': eventCount,
-      if (ewmaZ != null) 'ewma_z': ewmaZ,
+      if (ewmaPercentile != null) 'ewma_percentile': ewmaPercentile,
+      if (outlierCount != null) 'outlier_count': outlierCount,
       if (latencyP25Ms != null) 'latency_p25_ms': latencyP25Ms,
       if (latencyMedianMs != null) 'latency_median_ms': latencyMedianMs,
       if (latencyP75Ms != null) 'latency_p75_ms': latencyP75Ms,
@@ -2212,7 +2269,8 @@ class MasteryStateCompanion extends UpdateCompanion<MasteryStateRow> {
     Value<String>? kindId,
     Value<String>? heuristicTag,
     Value<int>? eventCount,
-    Value<double>? ewmaZ,
+    Value<double>? ewmaPercentile,
+    Value<int>? outlierCount,
     Value<int?>? latencyP25Ms,
     Value<int?>? latencyMedianMs,
     Value<int?>? latencyP75Ms,
@@ -2227,7 +2285,8 @@ class MasteryStateCompanion extends UpdateCompanion<MasteryStateRow> {
       kindId: kindId ?? this.kindId,
       heuristicTag: heuristicTag ?? this.heuristicTag,
       eventCount: eventCount ?? this.eventCount,
-      ewmaZ: ewmaZ ?? this.ewmaZ,
+      ewmaPercentile: ewmaPercentile ?? this.ewmaPercentile,
+      outlierCount: outlierCount ?? this.outlierCount,
       latencyP25Ms: latencyP25Ms ?? this.latencyP25Ms,
       latencyMedianMs: latencyMedianMs ?? this.latencyMedianMs,
       latencyP75Ms: latencyP75Ms ?? this.latencyP75Ms,
@@ -2252,8 +2311,11 @@ class MasteryStateCompanion extends UpdateCompanion<MasteryStateRow> {
     if (eventCount.present) {
       map['event_count'] = Variable<int>(eventCount.value);
     }
-    if (ewmaZ.present) {
-      map['ewma_z'] = Variable<double>(ewmaZ.value);
+    if (ewmaPercentile.present) {
+      map['ewma_percentile'] = Variable<double>(ewmaPercentile.value);
+    }
+    if (outlierCount.present) {
+      map['outlier_count'] = Variable<int>(outlierCount.value);
     }
     if (latencyP25Ms.present) {
       map['latency_p25_ms'] = Variable<int>(latencyP25Ms.value);
@@ -2291,7 +2353,8 @@ class MasteryStateCompanion extends UpdateCompanion<MasteryStateRow> {
           ..write('kindId: $kindId, ')
           ..write('heuristicTag: $heuristicTag, ')
           ..write('eventCount: $eventCount, ')
-          ..write('ewmaZ: $ewmaZ, ')
+          ..write('ewmaPercentile: $ewmaPercentile, ')
+          ..write('outlierCount: $outlierCount, ')
           ..write('latencyP25Ms: $latencyP25Ms, ')
           ..write('latencyMedianMs: $latencyMedianMs, ')
           ..write('latencyP75Ms: $latencyP75Ms, ')
@@ -3648,7 +3711,8 @@ typedef $$MasteryStateTableCreateCompanionBuilder =
       required String kindId,
       required String heuristicTag,
       Value<int> eventCount,
-      Value<double> ewmaZ,
+      Value<double> ewmaPercentile,
+      Value<int> outlierCount,
       Value<int?> latencyP25Ms,
       Value<int?> latencyMedianMs,
       Value<int?> latencyP75Ms,
@@ -3664,7 +3728,8 @@ typedef $$MasteryStateTableUpdateCompanionBuilder =
       Value<String> kindId,
       Value<String> heuristicTag,
       Value<int> eventCount,
-      Value<double> ewmaZ,
+      Value<double> ewmaPercentile,
+      Value<int> outlierCount,
       Value<int?> latencyP25Ms,
       Value<int?> latencyMedianMs,
       Value<int?> latencyP75Ms,
@@ -3700,8 +3765,13 @@ class $$MasteryStateTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
-  ColumnFilters<double> get ewmaZ => $composableBuilder(
-    column: $table.ewmaZ,
+  ColumnFilters<double> get ewmaPercentile => $composableBuilder(
+    column: $table.ewmaPercentile,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get outlierCount => $composableBuilder(
+    column: $table.outlierCount,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -3770,8 +3840,13 @@ class $$MasteryStateTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
-  ColumnOrderings<double> get ewmaZ => $composableBuilder(
-    column: $table.ewmaZ,
+  ColumnOrderings<double> get ewmaPercentile => $composableBuilder(
+    column: $table.ewmaPercentile,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get outlierCount => $composableBuilder(
+    column: $table.outlierCount,
     builder: (column) => ColumnOrderings(column),
   );
 
@@ -3838,8 +3913,15 @@ class $$MasteryStateTableAnnotationComposer
     builder: (column) => column,
   );
 
-  GeneratedColumn<double> get ewmaZ =>
-      $composableBuilder(column: $table.ewmaZ, builder: (column) => column);
+  GeneratedColumn<double> get ewmaPercentile => $composableBuilder(
+    column: $table.ewmaPercentile,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get outlierCount => $composableBuilder(
+    column: $table.outlierCount,
+    builder: (column) => column,
+  );
 
   GeneratedColumn<int> get latencyP25Ms => $composableBuilder(
     column: $table.latencyP25Ms,
@@ -3912,7 +3994,8 @@ class $$MasteryStateTableTableManager
                 Value<String> kindId = const Value.absent(),
                 Value<String> heuristicTag = const Value.absent(),
                 Value<int> eventCount = const Value.absent(),
-                Value<double> ewmaZ = const Value.absent(),
+                Value<double> ewmaPercentile = const Value.absent(),
+                Value<int> outlierCount = const Value.absent(),
                 Value<int?> latencyP25Ms = const Value.absent(),
                 Value<int?> latencyMedianMs = const Value.absent(),
                 Value<int?> latencyP75Ms = const Value.absent(),
@@ -3926,7 +4009,8 @@ class $$MasteryStateTableTableManager
                 kindId: kindId,
                 heuristicTag: heuristicTag,
                 eventCount: eventCount,
-                ewmaZ: ewmaZ,
+                ewmaPercentile: ewmaPercentile,
+                outlierCount: outlierCount,
                 latencyP25Ms: latencyP25Ms,
                 latencyMedianMs: latencyMedianMs,
                 latencyP75Ms: latencyP75Ms,
@@ -3942,7 +4026,8 @@ class $$MasteryStateTableTableManager
                 required String kindId,
                 required String heuristicTag,
                 Value<int> eventCount = const Value.absent(),
-                Value<double> ewmaZ = const Value.absent(),
+                Value<double> ewmaPercentile = const Value.absent(),
+                Value<int> outlierCount = const Value.absent(),
                 Value<int?> latencyP25Ms = const Value.absent(),
                 Value<int?> latencyMedianMs = const Value.absent(),
                 Value<int?> latencyP75Ms = const Value.absent(),
@@ -3956,7 +4041,8 @@ class $$MasteryStateTableTableManager
                 kindId: kindId,
                 heuristicTag: heuristicTag,
                 eventCount: eventCount,
-                ewmaZ: ewmaZ,
+                ewmaPercentile: ewmaPercentile,
+                outlierCount: outlierCount,
                 latencyP25Ms: latencyP25Ms,
                 latencyMedianMs: latencyMedianMs,
                 latencyP75Ms: latencyP75Ms,

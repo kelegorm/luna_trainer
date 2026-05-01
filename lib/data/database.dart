@@ -18,7 +18,7 @@ class LunaDatabase extends _$LunaDatabase {
   LunaDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 3;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -42,6 +42,19 @@ class LunaDatabase extends _$LunaDatabase {
         await customStatement(
           'CREATE INDEX IF NOT EXISTS idx_move_events_kind_tag_created '
           'ON move_events (kind_id, heuristic_tag, created_at)',
+        );
+      }
+      if (from < 3) {
+        // v3 (U8): rename mastery_state.ewma_z → ewma_percentile (the
+        // slot stores EWMA of percentile, not z), and add
+        // outlier_count for the |z|>3 drop counter (R7). Pre-launch
+        // database with no production rows — rename + add is safe.
+        await customStatement(
+          'ALTER TABLE mastery_state RENAME COLUMN ewma_z TO ewma_percentile',
+        );
+        await customStatement(
+          'ALTER TABLE mastery_state ADD COLUMN outlier_count INTEGER '
+          'NOT NULL DEFAULT 0',
         );
       }
     },

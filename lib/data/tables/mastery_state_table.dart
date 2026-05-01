@@ -9,7 +9,13 @@ class MasteryState extends Table {
   TextColumn get heuristicTag => text()();
 
   IntColumn get eventCount => integer().withDefault(const Constant(0))();
-  RealColumn get ewmaZ => real().withDefault(const Constant(0))();
+
+  /// EWMA of per-event percentile (not z). Stored on [0, 1].
+  RealColumn get ewmaPercentile => real().withDefault(const Constant(0))();
+
+  /// Count of events whose `|z| > 3` led to a drop (R7 outlier rule).
+  /// Diagnostic-only — does not flow into mastery score.
+  IntColumn get outlierCount => integer().withDefault(const Constant(0))();
 
   IntColumn get latencyP25Ms => integer().nullable()();
   IntColumn get latencyMedianMs => integer().nullable()();
