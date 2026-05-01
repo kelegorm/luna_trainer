@@ -43,12 +43,15 @@ Greenfield Flutter-приложение: персональный тренажё
 | Pluggable arch | R26 |
 | Local & ad-free | R27, R28 |
 | Naming & UX display | R33 |
+| Difficulty variation (full-game) | R34, R35, R36, R37, R38, R39 |
 
 **Origin actors:** A1 (Игрок), A2 (Solver-движок), A3 (Diagnostic engine), A4 (Drill-планировщик), A5 (Генератор уровней).
 **Origin flows:** F1 (обычная партия как источник диагностики), F2 (Drill-сессия 10+10 + ChainDrill), F3 (Hint-as-diagnostic-signal), F4 (Просмотр прогресса).
-**Origin acceptance examples:** AE1 (R3, R6), AE2 (R12, R13), AE3 (R10), AE4 (R5), AE5 (R15), AE6 (R17), AE7 (R22, R23, R24), AE8 (R25), AE9 (R29, R30), AE10 (R31, R32).
+**Origin acceptance examples:** AE1 (R3, R6), AE2 (R12, R13), AE3 (R10), AE4 (R5), AE5 (R15), AE6 (R17), AE7 (R22, R23, R24), AE8 (R25), AE9 (R29, R30), AE10 (R31, R32), AE11 (R34, R36, R38), AE12 (R37, R38), AE13 (R39).
 
 > **Note:** R29–R33 и AE9–AE10 добавлены addendum-ом после завершения Phase B. См. [`docs/tango_trainer_concept_addendum.md`](../tango_trainer_concept_addendum.md) для контекста и mapping движковой ↔ UX-таксономии. Engine-код Phase A/B этими требованиями не затронут; реализация — в Phase C (telemetry-поля) и Phase D (UX и drill-mechanics).
+>
+> **Note:** R34–R39 и AE11–AE13 добавлены вторым addendum-ом ([`docs/brainstorms/2026-05-01-tango-difficulty-variation.md`](../brainstorms/2026-05-01-tango-difficulty-variation.md)) до старта Phase C. Расширяют только full-game-флоу: автоматическая вариация difficulty band, post-session relative-nudge кнопки, variety guarantee. Mastery / FSRS / drill-flow в v1 **не затронуты** — `difficulty_band` и `user_adjusted` логируются на MoveEvent впрок для будущего factorial-анализа. Phase A/B шипнуты; реализация — в Phase C (schema v2 поля в U7) и Phase D (новый U6.1 + U11 amendments).
 
 ---
 
@@ -1003,6 +1006,123 @@ Solver.availableDeductions(p):
 - Production/recognition ratio (стартово 70/30) — калибруется по фактическому false_alarm rate в первые 2 недели.
 - Layer-thresholds (0.4 / 0.7) — стартовые, калибруются.
 
+---
+
+### Phase C/D — Difficulty variation amendments (R34–R39)
+
+> Добавлено на основе [`docs/brainstorms/2026-05-01-tango-difficulty-variation.md`](../brainstorms/2026-05-01-tango-difficulty-variation.md). Требования R34–R39 расширяют full-game-флоу: автоматическая вариация `difficulty_band ∈ {1,2,3}` между партиями, post-session relative-nudge кнопки, variety guarantee. Mastery / FSRS / drill в v1 **не затрагиваются** — поля `difficulty_band` и `user_adjusted` логируются на MoveEvent впрок для будущего factorial-анализа. Реализация: одна schema-v2 миграция в U7 (вместе с R29/R31), один новый юнит U6.1 (расширение шипнутого генератора), amendments к U11 (rotator + 4 кнопки). U6 (Phase B), U8/U9 (Mastery/FSRS), U12 (drill), U13/U13.1 — **не затронуты**.
+
+#### U7 amendment — difficulty fields + резолюция collision на `mode` (R34, R36, R38)
+
+**Изменение схемы (расширяет U7 schema v2-миграцию из R29/R31):**
+
+- Добавить в `move_events`: `difficulty_band INTEGER NOT NULL DEFAULT 2` (R36), `user_adjusted INTEGER NOT NULL DEFAULT 0` (R38; sqlite-bool как INTEGER 0/1).
+- Добавить в `sessions`: `difficulty_band INTEGER NOT NULL DEFAULT 2`, `user_adjusted INTEGER NOT NULL DEFAULT 0`. Это authoritative-источник для партии; MoveEvent-ы наследуют их при записи (UI/Bloc копирует из current session-row).
+- **Резолюция collision на `move_events.mode`:** старая колонка `mode` (full_game / drill) дропается из v2-схемы — она дублирует `sessions.mode` (можно получить через JOIN, на текущих data-volumes стоимость ничтожна). Новая колонка `mode TEXT NULL` (из R31 amendment) несёт **исключительно** propagation/hunt семантику. Greenfield-обоснование: Phase A/B engine-кода MoveEvent ещё не пишет, существующих рядов нет, drop безопасен. Технически миграция v1→v2 формирует новый `move_events` без поля 'full_game'/'drill' — drift `MigrationStrategy.onUpgrade` через `m.alterTable(TableMigration(...))` или (если drift не умеет drop column в одной транзакции) через `recreate-and-copy` рецепт из drift docs.
+- Документировать в Dart-комментарии на `move_events.mode`: «'propagation' | 'hunt' (R31). Партионный режим (full_game/drill) живёт в `sessions.mode`».
+
+**Files (расширение U7):**
+- Modify: `lib/data/tables/move_events_table.dart` — drop старого `mode` (full_game/drill), оставить новый `mode TEXT NULL` (propagation/hunt), добавить `difficulty_band`, `user_adjusted`.
+- Modify: `lib/data/tables/sessions_table.dart` — добавить `difficulty_band`, `user_adjusted`.
+- Modify: `lib/data/database.dart` — schema-v2 migration recipe.
+- Modify: `lib/data/repositories/move_events_repository.dart` — write API принимает band/userAdjusted.
+- Modify: `lib/data/repositories/sessions_repository.dart` — `startSession({mode, band, userAdjusted})`.
+- Test: `test/data/migration_test.dart` (расширение): drop-and-add для `move_events.mode` отрабатывает; v2 snapshot обновлён.
+- Test: `test/data/move_events_repository_test.dart` (расширение): write+read с новыми полями.
+
+**Дополнительные Test scenarios:**
+- Schema v2 migration happy: пустая v1-БД → v2 с новыми колонками. `difficulty_band` default=2, `user_adjusted` default=0 на любом insert без явных значений.
+- Schema v2 mode collision: после миграции — `move_events.mode` принимает только {NULL, 'propagation', 'hunt'}; вставка 'full_game' валидна на уровне sqlite (TEXT), но grep по Dart-коду не находит ни одного call-site, который бы писал такое значение в `move_events.mode` (regression-guard).
+- Repository happy: `commitMove(... difficultyBand: 3, userAdjusted: true)` → строка с band=3, user_adjusted=1. Read возвращает те же значения.
+- Sessions repository happy: `startSession(mode: full_game, band: 2, userAdjusted: false)` → row с этими полями. Subsequent MoveEvents читают band/userAdjusted из этой row.
+- Idempotency: повторная миграция v1→v2 (например, на свежеустановленном устройстве, где v1 ни разу не открывался) — экивалентна одношаговому созданию v2 schema; `SchemaVerifier` snapshot v2 совпадает.
+
+#### Новый юнит U6.1 — Difficulty band → generator params + variety filter extension (R34, R35, R39)
+
+**Goal:** Расширить шипнутый `TangoLevelGenerator` принимать `difficulty_band` и транслировать его в density / sign_density / required_techniques. Расширить `diversity_filter` проверкой против предыдущей партии того же band-а с гарантией ≥6 структурно различных «форм» на 10 последовательных партий.
+
+**Requirements:** R34 (band-параметр на партию), R35 (band → params), R39 (variety guarantee).
+
+**Dependencies:** U6 (Phase B, шипнут), U7 amendment (sessions.difficulty_band — для лога recent signatures по band-у).
+
+**Files:**
+- Create: `lib/puzzles/tango/generator/difficulty_band.dart` — `enum DifficultyBand { easy=1, medium=2, hard=3 }`, `DifficultyBand clamp(int)`, `DifficultyBand bumpUp()`, `DifficultyBand bumpDown()`.
+- Create: `lib/puzzles/tango/generator/band_to_params_mapper.dart` — pure function `mapToParams(band) → GenerationParams { density, signDensity, requiredTechniques }`. Стартовые численные пороги — Deferred to Implementation, документируются inline-комментарием.
+- Modify: `lib/puzzles/tango/generator/tango_level_generator.dart` — `generate(...)` принимает опциональный `DifficultyBand band`. Если задан — overrides `TargetMix` через `BandToParamsMapper` и проверяет, что solver на сгенерированной позиции **фактически** требует ≥1 технику из `requiredTechniques`. Cap = 200 attempts (как в U6).
+- Modify: `lib/puzzles/tango/generator/diversity_filter.dart` — расширить API параметром `recentSignatures: List<String>` (последние 10 в БД по filter band) и `previousBandSignature: String?`. Гарантия `validateHorizonOf10`: на 10 последовательных partial-mocked генерациях ≥6 различных signatures, иначе force-reroll.
+- Test: `test/puzzles/tango/generator/band_to_params_mapper_test.dart`.
+- Test: `test/puzzles/tango/generator/diversity_filter_test.dart` (расширение).
+- Test: `test/puzzles/tango/generator/tango_level_generator_test.dart` (расширение band-сценариями).
+
+**Approach:**
+- **BandToParamsMapper** (стартовые значения, директивно — калибруются после ~20–30 сгенерированных пазлов):
+  - band=1 (easy): density ≈ 0.55, sign_density ≈ 0.35, required_techniques ⊇ {PairCompletion, TrioAvoidance, ParityFill}.
+  - band=2 (medium): density ≈ 0.40, sign_density ≈ 0.25, required_techniques ⊇ base + {SignPropagation}.
+  - band=3 (hard): density ≈ 0.25, sign_density ≈ 0.15, required_techniques ⊇ base + {AdvancedMidLineInference} ИЛИ {ChainExtension}.
+- **Generator-loop:** после standard solve-then-remove → solver runs → собираем `actually_used_techniques`. Если `requiredTechniques ⊄ actually_used` → discard, retry. Cap = 200; на превышении — log warning, return best-effort.
+- **Variety threshold definition** (Deferred to Implementation): стартово signature = exact-match по hash{позиции seed-меток + позиции `=`/`×`}. Variety filter scans `recentSignatures` (последние 10 на этого пользователя из `sessions` JOIN preview-data) и при collision force-reroll. Если за 10 generation-attempts по diversity не получили unique → отдаём с warning.
+- **Variety horizon-проверка:** сервис `_verifyVarietyHorizon(last10Signatures) → bool` — true если уникальных ≥ 6.
+
+**Test scenarios:**
+- Happy path AE11: `generate(band=2)` → solver на результирующей позиции применяет ≥1 раз SignPropagation (R35 mapping).
+- Happy path band=1: density сгенерированной позиции ≥ 0.45, required_techniques НЕ требует AdvancedMidLineInference.
+- Happy path band=3: density ≤ 0.30, required_techniques обязательно покрывает {AdvancedMidLineInference} ∪ {ChainExtension}.
+- Edge case AE13: 10 partial-mocked generations с разными band-ами → `_verifyVarietyHorizon(signatures)` → ≥ 6 уникальных. Не должно быть «5 одинаковых форм подряд».
+- Edge case: band=2, recentSignatures содержит 9 копий signature `s1` → `generate(band=2)` принудительно отвергает rolls, дающие `s1`, продолжает до уникального. Cap=200 не превышен на разумных random-seeds.
+- Edge case: 2 sequential `generate(band=2)` подряд → signature[0] != signature[1] (R39 базовая гарантия).
+- Edge case: cap-достижение в variety branch → возвращает best-effort puzzle с warning-log; не блокирует запуск партии (UX-первая).
+- Determinism: `generate(band=X, seed=42)` дважды → одинаковый puzzle (тестовая воспроизводимость).
+
+**Verification:**
+- Unit-тесты зелёные. Manual smoke: 10 партий с авто-rotation, глазами проверить разнообразие form.
+
+#### U11 amendments — band rotator, post-session 4 buttons, user_adjusted propagation (R34, R37, R38)
+
+**Изменение основной логики full-game flow (расширение U11):**
+
+**Дополнительные Files:**
+- Create: `lib/features/full_game/band_rotator.dart` — выбирает следующий `DifficultyBand` для авто-«Следующая». Стартовый алгоритм: round-robin {1, 2, 3} с ±1 jitter (избегаем deterministic чередования). Алгоритм — Deferred to Implementation, пересмотр после 2 недель.
+- Create: `lib/features/summary/widgets/post_session_actions.dart` — 4 кнопки end-of-session с правильными disabled-состояниями. Цифру band **не** показывает.
+- Modify: `lib/features/full_game/bloc/full_game_bloc.dart` — `GameStarted({band, userAdjusted})`; каждый `MoveCommitted` пишет MoveEvent с этими значениями (наследует от session-row).
+- Modify: `lib/features/full_game/full_game_screen.dart` — на старте партии: `sessionsRepository.startSession(mode: full_game, band, userAdjusted)`, передать band в `TangoLevelGenerator.generate(band: ...)`.
+- Modify: `lib/features/summary/end_of_session_screen.dart` — заменить старую кнопку «Следующая партия» на `PostSessionActions` (4 кнопки).
+- Modify: `lib/features/summary/bloc/summary_bloc.dart` — events: `NextAuto`, `NextSame`, `NextHarder`, `NextEasier` → emit `NextGameRequested({band, userAdjusted})`.
+- Test: `test/features/full_game/band_rotator_test.dart`.
+- Test: `test/features/full_game/bloc/full_game_bloc_test.dart` (расширение band/user_adjusted сценариями).
+- Test: `test/features/summary/bloc/summary_bloc_test.dart` (расширение 4-кнопочными сценариями).
+- Test: `test/features/summary/widgets/post_session_actions_test.dart`.
+
+**Approach:**
+- **BandRotator:** держит in-memory state (последние 5 band-ов session-history). Round-robin с jitter — избегаем deterministic {1,2,3,1,2,3} ради subjective разнообразия. Стартовый band на cold-start = 2 (medium).
+- **4 кнопки (R37):**
+  - **«Следующая»** (auto): `band = rotator.next(currentBand)`, `user_adjusted=false`.
+  - **«Ещё такую же»**: `band = current`, `user_adjusted=true`. Rotator state **не** сдвигается (следующий auto продолжается с того же места).
+  - **«Сложнее ▲»**: `band = current.bumpUp()` (clamp to 3), `user_adjusted=true`. Disabled при `band=3`.
+  - **«Легче ▼»**: `band = current.bumpDown()` (clamp to 1), `user_adjusted=true`. Disabled при `band=1`.
+- **R34 invariant — band невидим в UI:** `PostSessionActions` рендерит только направления `▲/▼` и текстовые лейблы без цифр; `FullGameScreen` нигде не показывает текущий band-номер. Виджет-тест проверяет отсутствие Text-нод с цифрами 1/2/3 рядом со словами «band»/«сложность».
+- **MoveEvent inheritance:** Bloc, при `MoveCommitted`, читает `currentSession.band` и `currentSession.userAdjusted`, передаёт в `move_events_repository.commit(...)`. Это контракт с U7 — поля denormalized на каждый MoveEvent для будущего factorial-анализа без JOIN.
+
+**Дополнительные Test scenarios:**
+- Happy path AE11: `GameStarted(band=2, user_adjusted=false)` → 28 ходов → каждый MoveEvent имеет `{difficulty_band=2, user_adjusted=false}`. На end-of-session «Следующая» → BandRotator выдаёт band ∈ {1, 3} (НЕ 2 — round-robin), `user_adjusted=false` для новой сессии.
+- Happy path AE12 (Сложнее): партия band=2 завершена → press «Сложнее ▲» → `NextGameRequested(band=3, user_adjusted=true)`. На следующем end-of-session кнопка «Сложнее ▲» disabled (band=3 max).
+- Edge AE12 (clamp): band=3, press «Сложнее ▲» → no-op (кнопка disabled, event не fires).
+- Edge AE12 (clamp): band=1, press «Легче ▼» → no-op.
+- Happy path: «Ещё такую же» band=2 → `NextGameRequested(band=2, user_adjusted=true)`. Rotator state **не** сдвинут — следующий auto «Следующая» возвращается к ротации с правильным state.
+- R34 UI invisibility: виджет-тест `PostSessionActions` — `find.text('1')`, `find.text('2')`, `find.text('3')` должны быть `findsNothing` в дереве. Только направления.
+- R38 propagation: после press «Сложнее ▲» → все MoveEvent-ы новой партии имеют `user_adjusted=1` (проверяется в БД после интеграционного прогона).
+- BandRotator: для seeded random — детерминирован. Не выдаёт один и тот же band 3 раза подряд на горизонте 10.
+- Drill default (R38): drill-сессии всегда пишут MoveEvent с `user_adjusted=false` (drill всегда auto; контракт с U12 / DrillBloc — никаких relative-nudge кнопок в drill).
+
+**Verification:**
+- Bloc/widget тесты зелёные. Manual smoke на Android: 5 партий с разными кнопками; debug-screen показывает band/user_adjusted в БД для каждого MoveEvent.
+
+#### Open Questions (Deferred to Implementation) — added by R34–R39
+
+- **Rotation algorithm для R34** — round-robin {1,2,3} с jitter ±1, weighted random (50/25/25), или mastery-aware (равномерное mastery → больше hard, иначе больше easy). Стартово: round-robin с jitter. Калибруется после 2 недель.
+- **Численные пороги R35** (density / sign_density / required_techniques per band) — стартовые значения в `BandToParamsMapper` подбираются эмпирически на 20–30 generated puzzles; финальные после первой недели реальной игры.
+- **Variety threshold для R39** — точное определение «структурно идентичная» расстановка. Стартово: exact-match по signature {seed-mark positions + sign positions}. Калибруется (cosine, Hamming, ≥80% overlap) после первого месяца.
+- **BandRotator jitter range** — стартово ±1, варьируется ли это по mastery — пересмотр после 2 недель.
+
 #### Новый юнит U13.1 — Heuristic display names + sub-classification (R33)
 
 **Goal:** Заполнить `HeuristicDescriptor.displayName` человекочитаемыми именами из концепт-таксономии. Добавить под-классификацию `AdvancedMidLineInference` на `edge_1_5` / `edge_2_6` / прочее, чтобы drill-планировщик мог тренировать каждую под-форму отдельно.
@@ -1087,11 +1207,11 @@ Solver и генератор полностью работают (без UI). Г
 
 ### Phase C — Engine (U7, U8, U9)
 
-Telemetry pipeline + mastery + FSRS + drill selector. Schema bump v1 → v2 в U7 для полей `mode` (R31) и `event_kind` (R29 — заполняется только в Phase D). Готовность: можно симулировать сессию через unit-тесты, увидеть, что mastery апдейтится, FSRS-due двигается, MoveEvent-ы несут propagation/hunt-разметку.
+Telemetry pipeline + mastery + FSRS + drill selector. Schema bump v1 → v2 в U7 — единая миграция, объединяющая поля `mode` (R31, propagation/hunt; **drop старого** full_game/drill mode на `move_events`), `event_kind` (R29), `difficulty_band` + `user_adjusted` (R36/R38, на `move_events` и `sessions`). Готовность: можно симулировать сессию через unit-тесты, увидеть, что mastery апдейтится, FSRS-due двигается, MoveEvent-ы несут propagation/hunt-разметку и difficulty/user-adjusted поля (последние не используются в mastery в v1).
 
-### Phase D — UX & Integration (U10, U11, U12, U13, U13.1)
+### Phase D — UX & Integration (U10, U11, U12, U13, U13.1, U6.1)
 
-Полный playable MVP. Готовность: на Android можно сыграть партию, получить summary (с propagation/hunt-метрикой и bias-флагами по R31/R32), начать drill (с recognition-режимом и слоями Pure/Distracted/Real по R29/R30), увидеть Mastery-экран. Имена техник в UI — человекочитаемые (R33).
+Полный playable MVP. Готовность: на Android можно сыграть партию, получить summary (с propagation/hunt-метрикой и bias-флагами по R31/R32, с 4 post-session кнопками по R37), начать drill (с recognition-режимом и слоями Pure/Distracted/Real по R29/R30), увидеть Mastery-экран. Имена техник в UI — человекочитаемые (R33). Difficulty band авто-варьируется между full-game партиями (R34/R35) с variety guarantee (R39); пользователь может относительно подкрутить через post-session кнопки (R37/R38). U6.1 расширяет шипнутый генератор без миграции БД.
 
 После Phase D — две недели live-use → калибровка thresholds (idle p99, motion threshold, k для shrinkage), capture в `docs/solutions/`.
 
@@ -1100,6 +1220,8 @@ Telemetry pipeline + mastery + FSRS + drill selector. Schema bump v1 → v2 в U
 ## Sources & References
 
 - **Origin document:** [docs/brainstorms/2026-05-01-tango-trainer-requirements.md](../brainstorms/2026-05-01-tango-trainer-requirements.md)
+- **Origin addendum (R29–R33):** [docs/tango_trainer_concept_addendum.md](../tango_trainer_concept_addendum.md)
+- **Origin addendum (R34–R39):** [docs/brainstorms/2026-05-01-tango-difficulty-variation.md](../brainstorms/2026-05-01-tango-difficulty-variation.md)
 - **Solver oracle:** [brohitbrose/linkedin-games on GitHub](https://github.com/brohitbrose/linkedin-games) (JS, MIT)
 - **FSRS Dart:** [`fsrs` on pub.dev](https://pub.dev/packages/fsrs), [open-spaced-repetition/dart-fsrs](https://github.com/open-spaced-repetition/dart-fsrs)
 - **FSRS algorithm:** [fsrs4anki wiki — The Algorithm](https://github.com/open-spaced-repetition/fsrs4anki/wiki/The-Algorithm), [Expertium FSRS explainer](https://expertium.github.io/Algorithm.html)
