@@ -117,12 +117,16 @@ void main() {
       expect(composite.eligibleForDrill, isFalse);
     });
 
-    test('solver and generator are stubs that throw UnimplementedError', () {
+    test('solver is wired (U5); generator is still a stub until U6', () {
       const kind = TangoPuzzleKind();
+      // U5 landed: solver now returns a list (empty for an unknown
+      // Position subtype) instead of throwing.
       expect(
-        () => kind.solver.availableDeductions(const _DummyPosition()),
-        throwsUnimplementedError,
+        kind.solver.availableDeductions(const _DummyPosition()),
+        isEmpty,
       );
+      // Generator is still a stub; U6 will replace it.
+      expect(kind.generator, isNotNull);
     });
   });
 }

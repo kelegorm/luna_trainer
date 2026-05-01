@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 
 import '../../engine/domain/heuristic.dart';
 import '../../puzzle/puzzle_kind.dart';
+import 'solver/tango_solver.dart';
 
 /// Catalog of MVP heuristics for Tango (R2). `Composite(unknown)` is
 /// logged for diagnostics but not eligible for drill (R10).
@@ -43,15 +44,6 @@ const _kTangoHeuristics = <HeuristicDescriptor>[
   ),
 ];
 
-class _TangoSolverStub extends Solver {
-  const _TangoSolverStub();
-
-  @override
-  List<Deduction> availableDeductions(Position p) {
-    throw UnimplementedError('Tango solver lands in U5.');
-  }
-}
-
 class _TangoGeneratorStub extends LevelGenerator {
   const _TangoGeneratorStub();
 }
@@ -66,7 +58,7 @@ class TangoPuzzleKind extends PuzzleKind {
   List<HeuristicDescriptor> get heuristics => _kTangoHeuristics;
 
   @override
-  Solver get solver => const _TangoSolverStub();
+  Solver get solver => const TangoSolver();
 
   @override
   LevelGenerator get generator => const _TangoGeneratorStub();
