@@ -16,7 +16,6 @@ class MixHistogram extends Equatable {
   /// Builds a histogram from raw firing counts. The sum of [counts]
   /// becomes the denominator; an empty input yields an empty histogram.
   factory MixHistogram.fromCounts(Map<Heuristic, int> counts) {
-    if (counts.isEmpty) return const MixHistogram({});
     var total = 0;
     for (final c in counts.values) {
       if (c < 0) {

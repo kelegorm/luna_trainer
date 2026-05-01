@@ -64,10 +64,6 @@ class TangoSolver extends Solver {
     return all.isEmpty ? null : all.first;
   }
 
-  /// Convenience wrapper exposed for symmetry with the plan; identical
-  /// to reading [TangoDeduction.forcedCells].
-  List<CellAddress> forcedCellsFor(TangoDeduction d) => d.forcedCells;
-
   Iterable<TangoDeduction> _runLineHeuristic(
     LineHeuristic h,
     TangoPosition p,

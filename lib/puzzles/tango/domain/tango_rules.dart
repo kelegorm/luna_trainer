@@ -32,8 +32,8 @@ class TangoMove extends Move with EquatableMixin {
 bool isLegal(TangoPosition position) {
   // Rules 1 and 2: anti-triple and count balance, per row and per column.
   for (var i = 0; i < kTangoBoardSize; i++) {
-    if (!_lineLegal(_row(position, i))) return false;
-    if (!_lineLegal(_col(position, i))) return false;
+    if (!lineLegal(_row(position, i))) return false;
+    if (!lineLegal(_col(position, i))) return false;
   }
 
   // Rules 3 and 4: edge constraints.
@@ -70,22 +70,18 @@ bool wouldViolate(TangoPosition position, TangoMove move) {
   return !isLegal(next);
 }
 
-// --- internals ---
-
-List<TangoMark?> _row(TangoPosition p, int r) => p.cells[r];
-
-List<TangoMark?> _col(TangoPosition p, int c) =>
-    [for (var r = 0; r < kTangoBoardSize; r++) p.cells[r][c]];
-
-bool _lineLegal(List<TangoMark?> line) {
-  // Anti-triple: three identical non-null marks consecutively.
+/// Returns `true` iff [line] currently violates neither anti-triple
+/// (no three identical non-null marks consecutively) nor count balance
+/// (at most 3 of either mark across a full 6-cell line).
+///
+/// Intended for full-length lines. Fragment shapes apply anti-triple
+/// without count-balance and use [shape_rules] helpers instead.
+bool lineLegal(List<TangoMark?> line) {
   for (var i = 0; i + 2 < line.length; i++) {
     final a = line[i];
     if (a == null) continue;
     if (a == line[i + 1] && a == line[i + 2]) return false;
   }
-
-  // Count balance: at most 3 of either mark in a 6-cell line.
   var suns = 0;
   var moons = 0;
   for (final m in line) {
@@ -94,6 +90,12 @@ bool _lineLegal(List<TangoMark?> line) {
   }
   const half = kTangoBoardSize ~/ 2;
   if (suns > half || moons > half) return false;
-
   return true;
 }
+
+// --- internals ---
+
+List<TangoMark?> _row(TangoPosition p, int r) => p.cells[r];
+
+List<TangoMark?> _col(TangoPosition p, int c) =>
+    [for (var r = 0; r < kTangoBoardSize; r++) p.cells[r][c]];

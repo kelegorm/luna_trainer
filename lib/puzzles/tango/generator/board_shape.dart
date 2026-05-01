@@ -15,12 +15,12 @@ enum BoardShapeKind { full6x6, fragment2x4, fragment3x3, singleRow, singleCol }
 /// `TangoPosition` shape can flow through solver / renderer without
 /// branching on shape kind.
 class BoardShape {
-  const BoardShape._({
+  BoardShape._({
     required this.kind,
     required this.activeCells,
     required this.activeLines,
     required this.fullLines,
-  });
+  }) : activeCellSet = Set.unmodifiable(activeCells);
 
   /// Full 6×6 board: all cells active, all four rules apply.
   factory BoardShape.full6x6() {
@@ -118,13 +118,10 @@ class BoardShape {
   final List<List<CellAddress>> fullLines;
 
   /// Quick membership test for active cells.
-  bool isActive(int row, int col) {
-    for (final a in activeCells) {
-      if (a.row == row && a.col == col) return true;
-    }
-    return false;
-  }
+  bool isActive(int row, int col) =>
+      activeCellSet.contains(CellAddress(row, col));
 
-  /// Set view onto [activeCells] for fast lookups.
-  Set<CellAddress> get activeCellSet => activeCells.toSet();
+  /// Set view onto [activeCells] for fast lookups; cached at
+  /// construction time so hot paths don't re-allocate it on every call.
+  final Set<CellAddress> activeCellSet;
 }

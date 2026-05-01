@@ -58,17 +58,8 @@ class TangoLevelGenerator extends LevelGenerator {
     int? seed,
     DiversityFilter? diversity,
   }) {
-    // Step 1 — defence-in-depth: TargetMix already rejects bad tags,
-    // but we re-check explicitly so the failure mode in this method
-    // matches the plan's "Composite не подаётся в drill" wording.
-    for (final h in mix.weights.keys) {
-      if (h.tagId == 'Composite(unknown)') {
-        return const GeneratorFailure(
-          'Composite не подаётся в drill',
-        );
-      }
-    }
-
+    // TargetMix construction already rejects Composite(unknown), so by
+    // the time we reach `generate` the mix is guaranteed valid.
     final effectiveSeed = seed ?? math.Random().nextInt(1 << 30);
     final rng = math.Random(effectiveSeed);
 

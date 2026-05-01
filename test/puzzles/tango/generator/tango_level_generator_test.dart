@@ -58,18 +58,17 @@ void main() {
       // Either Success (within tolerance) or BestEffort — both are
       // valid puzzles. Failure here would indicate the generator
       // couldn't even produce a candidate.
-      expect(result, isNot(isA<GeneratorFailure>()));
       final puzzle = switch (result) {
         GeneratorSuccess(:final puzzle) => puzzle,
         GeneratorBestEffort(:final puzzle) => puzzle,
-        GeneratorFailure() => null,
+        GeneratorFailure(:final reason) =>
+            fail('generator failed unexpectedly: $reason'),
       };
-      expect(puzzle, isNotNull);
       // Active count: 36; solution must be fully filled.
       var filled = 0;
       for (var r = 0; r < kTangoBoardSize; r++) {
         for (var c = 0; c < kTangoBoardSize; c++) {
-          if (puzzle!.solution.cells[r][c] != null) filled++;
+          if (puzzle.solution.cells[r][c] != null) filled++;
         }
       }
       expect(filled, 36);
@@ -82,26 +81,25 @@ void main() {
         shape: BoardShape.fragment2x4(),
         seed: 11,
       );
-      expect(result, isNot(isA<GeneratorFailure>()));
       final puzzle = switch (result) {
         GeneratorSuccess(:final puzzle) => puzzle,
         GeneratorBestEffort(:final puzzle) => puzzle,
-        GeneratorFailure() => null,
+        GeneratorFailure(:final reason) =>
+            fail('generator failed unexpectedly: $reason'),
       };
-      expect(puzzle, isNotNull);
       // Active cells filled, inactive cells null.
       for (var r = 0; r < kTangoBoardSize; r++) {
         for (var c = 0; c < kTangoBoardSize; c++) {
           final isActive = r < 2 && c < 4;
           if (isActive) {
             expect(
-              puzzle!.solution.cells[r][c],
+              puzzle.solution.cells[r][c],
               isNotNull,
               reason: 'active cell ($r,$c) must be filled',
             );
           } else {
             expect(
-              puzzle!.solution.cells[r][c],
+              puzzle.solution.cells[r][c],
               isNull,
               reason: 'inactive cell ($r,$c) must be null',
             );
@@ -114,7 +112,7 @@ void main() {
         }
       }
       // The solution must be complete under the shape.
-      expect(isCompleteFor(puzzle!.shape, puzzle.solution), isTrue);
+      expect(isCompleteFor(puzzle.shape, puzzle.solution), isTrue);
     });
   });
 

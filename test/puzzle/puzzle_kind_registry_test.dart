@@ -3,6 +3,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:luna_traineer/engine/domain/heuristic.dart';
 import 'package:luna_traineer/puzzle/puzzle_kind.dart';
 import 'package:luna_traineer/puzzle/puzzle_kind_registry.dart';
+import 'package:luna_traineer/puzzles/tango/generator/tango_level_generator.dart';
+import 'package:luna_traineer/puzzles/tango/solver/tango_solver.dart';
 import 'package:luna_traineer/puzzles/tango/tango_puzzle_kind.dart';
 
 class _FakeSolver extends Solver {
@@ -119,14 +121,15 @@ void main() {
 
     test('solver and generator are both wired (Phase B complete)', () {
       const kind = TangoPuzzleKind();
-      // U5 landed: solver returns a list (empty for an unknown
-      // Position subtype) instead of throwing.
+      // U5: solver is the concrete TangoSolver and returns an empty
+      // list for unknown Position subtypes instead of throwing.
+      expect(kind.solver, isA<TangoSolver>());
       expect(
         kind.solver.availableDeductions(const _DummyPosition()),
         isEmpty,
       );
-      // U6 landed: generator is the concrete TangoLevelGenerator.
-      expect(kind.generator, isNotNull);
+      // U6: generator is the concrete TangoLevelGenerator.
+      expect(kind.generator, isA<TangoLevelGenerator>());
     });
   });
 }

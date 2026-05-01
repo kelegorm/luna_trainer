@@ -2,6 +2,7 @@ import '../../../../engine/domain/heuristic.dart';
 import '../../domain/tango_constraint.dart';
 import '../../domain/tango_mark.dart';
 import '../../domain/tango_position.dart';
+import '../../domain/tango_rules.dart';
 import '../line_view.dart';
 import '../tango_deduction.dart';
 
@@ -103,21 +104,7 @@ class CompositeFallback {
 }
 
 bool _lineLegal(List<TangoMark?> line, LineView view) {
-  var suns = 0;
-  var moons = 0;
-  for (var i = 0; i < line.length; i++) {
-    final m = line[i];
-    if (m == TangoMark.sun) suns++;
-    if (m == TangoMark.moon) moons++;
-    if (i + 2 < line.length) {
-      final a = line[i];
-      final b = line[i + 1];
-      final c = line[i + 2];
-      if (a != null && a == b && b == c) return false;
-    }
-  }
-  const half = kTangoBoardSize ~/ 2;
-  if (suns > half || moons > half) return false;
+  if (!lineLegal(line)) return false;
   for (final c in view.constraints) {
     final ai = view.indexOf(c.cellA);
     final bi = view.indexOf(c.cellB);
