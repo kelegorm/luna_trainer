@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 
 import '../../engine/domain/heuristic.dart';
 import '../../puzzle/puzzle_kind.dart';
+import 'generator/tango_level_generator.dart';
 import 'solver/tango_solver.dart';
 
 /// Catalog of MVP heuristics for Tango (R2). `Composite(unknown)` is
@@ -44,10 +45,6 @@ const _kTangoHeuristics = <HeuristicDescriptor>[
   ),
 ];
 
-class _TangoGeneratorStub extends LevelGenerator {
-  const _TangoGeneratorStub();
-}
-
 class TangoPuzzleKind extends PuzzleKind {
   const TangoPuzzleKind();
 
@@ -61,7 +58,7 @@ class TangoPuzzleKind extends PuzzleKind {
   Solver get solver => const TangoSolver();
 
   @override
-  LevelGenerator get generator => const _TangoGeneratorStub();
+  LevelGenerator get generator => const TangoLevelGenerator();
 
   @override
   Widget renderBoard(Position position, void Function(Move move) onMove) {

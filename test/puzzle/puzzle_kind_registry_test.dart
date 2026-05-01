@@ -117,15 +117,15 @@ void main() {
       expect(composite.eligibleForDrill, isFalse);
     });
 
-    test('solver is wired (U5); generator is still a stub until U6', () {
+    test('solver and generator are both wired (Phase B complete)', () {
       const kind = TangoPuzzleKind();
-      // U5 landed: solver now returns a list (empty for an unknown
+      // U5 landed: solver returns a list (empty for an unknown
       // Position subtype) instead of throwing.
       expect(
         kind.solver.availableDeductions(const _DummyPosition()),
         isEmpty,
       );
-      // Generator is still a stub; U6 will replace it.
+      // U6 landed: generator is the concrete TangoLevelGenerator.
       expect(kind.generator, isNotNull);
     });
   });
