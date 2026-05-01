@@ -16,4 +16,14 @@ class Sessions extends Table {
   /// drill-card ids, etc.). Free-form so summary shape can evolve
   /// without migrations.
   TextColumn get outcomeJson => text().nullable()();
+
+  /// Difficulty band под которым партия была сгенерирована: 1=easy,
+  /// 2=medium, 3=hard (R36). Authoritative для партии — MoveEvent-ы
+  /// наследуют это значение при записи.
+  IntColumn get difficultyBand => integer().withDefault(const Constant(2))();
+
+  /// Был ли band подкручен пользователем post-session nudge-кнопкой
+  /// относительно автоматической ротации rotator-а (R38).
+  BoolColumn get userAdjusted =>
+      boolean().withDefault(const Constant(false))();
 }

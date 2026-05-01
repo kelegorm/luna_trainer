@@ -17,9 +17,7 @@ class Sessions extends Table with TableInfo {
     hasAutoIncrement: true,
     type: DriftSqlType.int,
     requiredDuringInsert: false,
-    defaultConstraints: GeneratedColumn.constraintIsAlways(
-      'PRIMARY KEY AUTOINCREMENT',
-    ),
+    $customConstraints: 'NOT NULL PRIMARY KEY AUTOINCREMENT',
   );
   late final GeneratedColumn<String> mode = GeneratedColumn<String>(
     'mode',
@@ -27,6 +25,7 @@ class Sessions extends Table with TableInfo {
     false,
     type: DriftSqlType.string,
     requiredDuringInsert: true,
+    $customConstraints: 'NOT NULL',
   );
   late final GeneratedColumn<int> startedAt = GeneratedColumn<int>(
     'started_at',
@@ -34,6 +33,7 @@ class Sessions extends Table with TableInfo {
     false,
     type: DriftSqlType.int,
     requiredDuringInsert: true,
+    $customConstraints: 'NOT NULL',
   );
   late final GeneratedColumn<int> endedAt = GeneratedColumn<int>(
     'ended_at',
@@ -41,6 +41,7 @@ class Sessions extends Table with TableInfo {
     true,
     type: DriftSqlType.int,
     requiredDuringInsert: false,
+    $customConstraints: 'NULL',
   );
   late final GeneratedColumn<String> outcomeJson = GeneratedColumn<String>(
     'outcome_json',
@@ -48,6 +49,25 @@ class Sessions extends Table with TableInfo {
     true,
     type: DriftSqlType.string,
     requiredDuringInsert: false,
+    $customConstraints: 'NULL',
+  );
+  late final GeneratedColumn<int> difficultyBand = GeneratedColumn<int>(
+    'difficulty_band',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    $customConstraints: 'NOT NULL DEFAULT 2',
+    defaultValue: const CustomExpression('2'),
+  );
+  late final GeneratedColumn<int> userAdjusted = GeneratedColumn<int>(
+    'user_adjusted',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    $customConstraints: 'NOT NULL DEFAULT 0 CHECK (user_adjusted IN (0, 1))',
+    defaultValue: const CustomExpression('0'),
   );
   @override
   List<GeneratedColumn> get $columns => [
@@ -56,6 +76,8 @@ class Sessions extends Table with TableInfo {
     startedAt,
     endedAt,
     outcomeJson,
+    difficultyBand,
+    userAdjusted,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -73,6 +95,9 @@ class Sessions extends Table with TableInfo {
   Sessions createAlias(String alias) {
     return Sessions(attachedDatabase, alias);
   }
+
+  @override
+  bool get dontWriteConstraints => true;
 }
 
 class MoveEvents extends Table with TableInfo {
@@ -87,9 +112,7 @@ class MoveEvents extends Table with TableInfo {
     hasAutoIncrement: true,
     type: DriftSqlType.int,
     requiredDuringInsert: false,
-    defaultConstraints: GeneratedColumn.constraintIsAlways(
-      'PRIMARY KEY AUTOINCREMENT',
-    ),
+    $customConstraints: 'NOT NULL PRIMARY KEY AUTOINCREMENT',
   );
   late final GeneratedColumn<int> sessionId = GeneratedColumn<int>(
     'session_id',
@@ -97,9 +120,7 @@ class MoveEvents extends Table with TableInfo {
     false,
     type: DriftSqlType.int,
     requiredDuringInsert: true,
-    defaultConstraints: GeneratedColumn.constraintIsAlways(
-      'REFERENCES sessions (id) ON DELETE CASCADE',
-    ),
+    $customConstraints: 'NOT NULL REFERENCES sessions(id)ON DELETE CASCADE',
   );
   late final GeneratedColumn<String> kindId = GeneratedColumn<String>(
     'kind_id',
@@ -107,6 +128,7 @@ class MoveEvents extends Table with TableInfo {
     false,
     type: DriftSqlType.string,
     requiredDuringInsert: true,
+    $customConstraints: 'NOT NULL',
   );
   late final GeneratedColumn<String> heuristicTag = GeneratedColumn<String>(
     'heuristic_tag',
@@ -114,6 +136,7 @@ class MoveEvents extends Table with TableInfo {
     false,
     type: DriftSqlType.string,
     requiredDuringInsert: true,
+    $customConstraints: 'NOT NULL',
   );
   late final GeneratedColumn<int> latencyMs = GeneratedColumn<int>(
     'latency_ms',
@@ -121,26 +144,23 @@ class MoveEvents extends Table with TableInfo {
     false,
     type: DriftSqlType.int,
     requiredDuringInsert: true,
+    $customConstraints: 'NOT NULL',
   );
-  late final GeneratedColumn<bool> wasCorrect = GeneratedColumn<bool>(
+  late final GeneratedColumn<int> wasCorrect = GeneratedColumn<int>(
     'was_correct',
     aliasedName,
     false,
-    type: DriftSqlType.bool,
+    type: DriftSqlType.int,
     requiredDuringInsert: true,
-    defaultConstraints: GeneratedColumn.constraintIsAlways(
-      'CHECK ("was_correct" IN (0, 1))',
-    ),
+    $customConstraints: 'NOT NULL CHECK (was_correct IN (0, 1))',
   );
-  late final GeneratedColumn<bool> hintRequested = GeneratedColumn<bool>(
+  late final GeneratedColumn<int> hintRequested = GeneratedColumn<int>(
     'hint_requested',
     aliasedName,
     false,
-    type: DriftSqlType.bool,
+    type: DriftSqlType.int,
     requiredDuringInsert: true,
-    defaultConstraints: GeneratedColumn.constraintIsAlways(
-      'CHECK ("hint_requested" IN (0, 1))',
-    ),
+    $customConstraints: 'NOT NULL CHECK (hint_requested IN (0, 1))',
   );
   late final GeneratedColumn<int> hintStepReached = GeneratedColumn<int>(
     'hint_step_reached',
@@ -148,54 +168,57 @@ class MoveEvents extends Table with TableInfo {
     false,
     type: DriftSqlType.int,
     requiredDuringInsert: false,
+    $customConstraints: 'NOT NULL DEFAULT 0',
     defaultValue: const CustomExpression('0'),
   );
-  late final GeneratedColumn<bool> contaminatedFlag = GeneratedColumn<bool>(
+  late final GeneratedColumn<int> contaminatedFlag = GeneratedColumn<int>(
     'contaminated_flag',
     aliasedName,
     false,
-    type: DriftSqlType.bool,
+    type: DriftSqlType.int,
     requiredDuringInsert: true,
-    defaultConstraints: GeneratedColumn.constraintIsAlways(
-      'CHECK ("contaminated_flag" IN (0, 1))',
-    ),
+    $customConstraints: 'NOT NULL CHECK (contaminated_flag IN (0, 1))',
   );
-  late final GeneratedColumn<bool> idleSoftSignal = GeneratedColumn<bool>(
+  late final GeneratedColumn<int> idleSoftSignal = GeneratedColumn<int>(
     'idle_soft_signal',
     aliasedName,
     false,
-    type: DriftSqlType.bool,
+    type: DriftSqlType.int,
     requiredDuringInsert: true,
-    defaultConstraints: GeneratedColumn.constraintIsAlways(
-      'CHECK ("idle_soft_signal" IN (0, 1))',
-    ),
+    $customConstraints: 'NOT NULL CHECK (idle_soft_signal IN (0, 1))',
   );
-  late final GeneratedColumn<bool> motionSignal = GeneratedColumn<bool>(
+  late final GeneratedColumn<int> motionSignal = GeneratedColumn<int>(
     'motion_signal',
     aliasedName,
     false,
-    type: DriftSqlType.bool,
+    type: DriftSqlType.int,
     requiredDuringInsert: true,
-    defaultConstraints: GeneratedColumn.constraintIsAlways(
-      'CHECK ("motion_signal" IN (0, 1))',
-    ),
+    $customConstraints: 'NOT NULL CHECK (motion_signal IN (0, 1))',
   );
-  late final GeneratedColumn<bool> lifecycleSignal = GeneratedColumn<bool>(
+  late final GeneratedColumn<int> lifecycleSignal = GeneratedColumn<int>(
     'lifecycle_signal',
     aliasedName,
     false,
-    type: DriftSqlType.bool,
+    type: DriftSqlType.int,
     requiredDuringInsert: true,
-    defaultConstraints: GeneratedColumn.constraintIsAlways(
-      'CHECK ("lifecycle_signal" IN (0, 1))',
-    ),
+    $customConstraints: 'NOT NULL CHECK (lifecycle_signal IN (0, 1))',
   );
   late final GeneratedColumn<String> mode = GeneratedColumn<String>(
     'mode',
     aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    $customConstraints: 'NULL',
+  );
+  late final GeneratedColumn<String> eventKind = GeneratedColumn<String>(
+    'event_kind',
+    aliasedName,
     false,
     type: DriftSqlType.string,
-    requiredDuringInsert: true,
+    requiredDuringInsert: false,
+    $customConstraints: 'NOT NULL DEFAULT \'production\'',
+    defaultValue: const CustomExpression('\'production\''),
   );
   late final GeneratedColumn<int> chainIndex = GeneratedColumn<int>(
     'chain_index',
@@ -203,6 +226,25 @@ class MoveEvents extends Table with TableInfo {
     false,
     type: DriftSqlType.int,
     requiredDuringInsert: false,
+    $customConstraints: 'NOT NULL DEFAULT 0',
+    defaultValue: const CustomExpression('0'),
+  );
+  late final GeneratedColumn<int> difficultyBand = GeneratedColumn<int>(
+    'difficulty_band',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    $customConstraints: 'NOT NULL DEFAULT 2',
+    defaultValue: const CustomExpression('2'),
+  );
+  late final GeneratedColumn<int> userAdjusted = GeneratedColumn<int>(
+    'user_adjusted',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    $customConstraints: 'NOT NULL DEFAULT 0 CHECK (user_adjusted IN (0, 1))',
     defaultValue: const CustomExpression('0'),
   );
   late final GeneratedColumn<int> createdAt = GeneratedColumn<int>(
@@ -211,6 +253,7 @@ class MoveEvents extends Table with TableInfo {
     false,
     type: DriftSqlType.int,
     requiredDuringInsert: true,
+    $customConstraints: 'NOT NULL',
   );
   @override
   List<GeneratedColumn> get $columns => [
@@ -227,7 +270,10 @@ class MoveEvents extends Table with TableInfo {
     motionSignal,
     lifecycleSignal,
     mode,
+    eventKind,
     chainIndex,
+    difficultyBand,
+    userAdjusted,
     createdAt,
   ];
   @override
@@ -246,6 +292,9 @@ class MoveEvents extends Table with TableInfo {
   MoveEvents createAlias(String alias) {
     return MoveEvents(attachedDatabase, alias);
   }
+
+  @override
+  bool get dontWriteConstraints => true;
 }
 
 class MasteryState extends Table with TableInfo {
@@ -259,6 +308,7 @@ class MasteryState extends Table with TableInfo {
     false,
     type: DriftSqlType.string,
     requiredDuringInsert: true,
+    $customConstraints: 'NOT NULL',
   );
   late final GeneratedColumn<String> heuristicTag = GeneratedColumn<String>(
     'heuristic_tag',
@@ -266,6 +316,7 @@ class MasteryState extends Table with TableInfo {
     false,
     type: DriftSqlType.string,
     requiredDuringInsert: true,
+    $customConstraints: 'NOT NULL',
   );
   late final GeneratedColumn<int> eventCount = GeneratedColumn<int>(
     'event_count',
@@ -273,6 +324,7 @@ class MasteryState extends Table with TableInfo {
     false,
     type: DriftSqlType.int,
     requiredDuringInsert: false,
+    $customConstraints: 'NOT NULL DEFAULT 0',
     defaultValue: const CustomExpression('0'),
   );
   late final GeneratedColumn<double> ewmaZ = GeneratedColumn<double>(
@@ -281,6 +333,7 @@ class MasteryState extends Table with TableInfo {
     false,
     type: DriftSqlType.double,
     requiredDuringInsert: false,
+    $customConstraints: 'NOT NULL DEFAULT 0.0',
     defaultValue: const CustomExpression('0.0'),
   );
   late final GeneratedColumn<int> latencyP25Ms = GeneratedColumn<int>(
@@ -289,6 +342,7 @@ class MasteryState extends Table with TableInfo {
     true,
     type: DriftSqlType.int,
     requiredDuringInsert: false,
+    $customConstraints: 'NULL',
   );
   late final GeneratedColumn<int> latencyMedianMs = GeneratedColumn<int>(
     'latency_median_ms',
@@ -296,6 +350,7 @@ class MasteryState extends Table with TableInfo {
     true,
     type: DriftSqlType.int,
     requiredDuringInsert: false,
+    $customConstraints: 'NULL',
   );
   late final GeneratedColumn<int> latencyP75Ms = GeneratedColumn<int>(
     'latency_p75_ms',
@@ -303,6 +358,7 @@ class MasteryState extends Table with TableInfo {
     true,
     type: DriftSqlType.int,
     requiredDuringInsert: false,
+    $customConstraints: 'NULL',
   );
   late final GeneratedColumn<double> errorRate = GeneratedColumn<double>(
     'error_rate',
@@ -310,6 +366,7 @@ class MasteryState extends Table with TableInfo {
     false,
     type: DriftSqlType.double,
     requiredDuringInsert: false,
+    $customConstraints: 'NOT NULL DEFAULT 0.0',
     defaultValue: const CustomExpression('0.0'),
   );
   late final GeneratedColumn<double> hintRate = GeneratedColumn<double>(
@@ -318,6 +375,7 @@ class MasteryState extends Table with TableInfo {
     false,
     type: DriftSqlType.double,
     requiredDuringInsert: false,
+    $customConstraints: 'NOT NULL DEFAULT 0.0',
     defaultValue: const CustomExpression('0.0'),
   );
   late final GeneratedColumn<String> hintStepCountsJson =
@@ -327,6 +385,7 @@ class MasteryState extends Table with TableInfo {
         false,
         type: DriftSqlType.string,
         requiredDuringInsert: false,
+        $customConstraints: 'NOT NULL DEFAULT \'{}\'',
         defaultValue: const CustomExpression('\'{}\''),
       );
   late final GeneratedColumn<int> lastUpdatedAt = GeneratedColumn<int>(
@@ -335,16 +394,15 @@ class MasteryState extends Table with TableInfo {
     false,
     type: DriftSqlType.int,
     requiredDuringInsert: true,
+    $customConstraints: 'NOT NULL',
   );
-  late final GeneratedColumn<bool> isCalibrating = GeneratedColumn<bool>(
+  late final GeneratedColumn<int> isCalibrating = GeneratedColumn<int>(
     'is_calibrating',
     aliasedName,
     false,
-    type: DriftSqlType.bool,
+    type: DriftSqlType.int,
     requiredDuringInsert: false,
-    defaultConstraints: GeneratedColumn.constraintIsAlways(
-      'CHECK ("is_calibrating" IN (0, 1))',
-    ),
+    $customConstraints: 'NOT NULL DEFAULT 1 CHECK (is_calibrating IN (0, 1))',
     defaultValue: const CustomExpression('1'),
   );
   @override
@@ -378,6 +436,13 @@ class MasteryState extends Table with TableInfo {
   MasteryState createAlias(String alias) {
     return MasteryState(attachedDatabase, alias);
   }
+
+  @override
+  List<String> get customConstraints => const [
+    'PRIMARY KEY(kind_id, heuristic_tag)',
+  ];
+  @override
+  bool get dontWriteConstraints => true;
 }
 
 class FsrsCards extends Table with TableInfo {
@@ -391,6 +456,7 @@ class FsrsCards extends Table with TableInfo {
     false,
     type: DriftSqlType.string,
     requiredDuringInsert: true,
+    $customConstraints: 'NOT NULL',
   );
   late final GeneratedColumn<String> heuristicTag = GeneratedColumn<String>(
     'heuristic_tag',
@@ -398,6 +464,7 @@ class FsrsCards extends Table with TableInfo {
     false,
     type: DriftSqlType.string,
     requiredDuringInsert: true,
+    $customConstraints: 'NOT NULL',
   );
   late final GeneratedColumn<i2.Uint8List> stateBlob =
       GeneratedColumn<i2.Uint8List>(
@@ -406,6 +473,7 @@ class FsrsCards extends Table with TableInfo {
         false,
         type: DriftSqlType.blob,
         requiredDuringInsert: true,
+        $customConstraints: 'NOT NULL',
       );
   late final GeneratedColumn<int> dueAt = GeneratedColumn<int>(
     'due_at',
@@ -413,6 +481,7 @@ class FsrsCards extends Table with TableInfo {
     false,
     type: DriftSqlType.int,
     requiredDuringInsert: true,
+    $customConstraints: 'NOT NULL',
   );
   late final GeneratedColumn<int> lastReviewedAt = GeneratedColumn<int>(
     'last_reviewed_at',
@@ -420,6 +489,7 @@ class FsrsCards extends Table with TableInfo {
     true,
     type: DriftSqlType.int,
     requiredDuringInsert: false,
+    $customConstraints: 'NULL',
   );
   @override
   List<GeneratedColumn> get $columns => [
@@ -445,10 +515,17 @@ class FsrsCards extends Table with TableInfo {
   FsrsCards createAlias(String alias) {
     return FsrsCards(attachedDatabase, alias);
   }
+
+  @override
+  List<String> get customConstraints => const [
+    'PRIMARY KEY(kind_id, heuristic_tag)',
+  ];
+  @override
+  bool get dontWriteConstraints => true;
 }
 
-class DatabaseAtV1 extends GeneratedDatabase {
-  DatabaseAtV1(QueryExecutor e) : super(e);
+class DatabaseAtV2 extends GeneratedDatabase {
+  DatabaseAtV2(QueryExecutor e) : super(e);
   late final Sessions sessions = Sessions(this);
   late final MoveEvents moveEvents = MoveEvents(this);
   late final MasteryState masteryState = MasteryState(this);
@@ -464,5 +541,15 @@ class DatabaseAtV1 extends GeneratedDatabase {
     fsrsCards,
   ];
   @override
-  int get schemaVersion => 1;
+  StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules([
+    WritePropagation(
+      on: TableUpdateQuery.onTableName(
+        'sessions',
+        limitUpdateKind: UpdateKind.delete,
+      ),
+      result: [TableUpdate('move_events', kind: UpdateKind.delete)],
+    ),
+  ]);
+  @override
+  int get schemaVersion => 2;
 }

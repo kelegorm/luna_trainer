@@ -19,11 +19,9 @@ void main() {
     db = LunaDatabase.forTesting(NativeDatabase.memory());
     repo = MoveEventsRepository(db);
     sessions = SessionsRepository(db);
-    sessionId = await sessions.insert(
-      SessionsCompanion.insert(
-        mode: 'drill',
-        startedAt: DateTime.utc(2026, 5, 1).millisecondsSinceEpoch,
-      ),
+    sessionId = await sessions.startSession(
+      mode: 'drill',
+      startedAt: DateTime.utc(2026, 5, 1),
     );
   });
 
@@ -31,7 +29,7 @@ void main() {
     await db.close();
   });
 
-  MoveEventsCompanion event({
+  Future<int> commit({
     required Heuristic h,
     required int latencyMs,
     required int createdAt,
@@ -40,29 +38,37 @@ void main() {
     int hintStepReached = 0,
     bool contaminated = false,
     int chainIndex = 0,
-    String mode = 'drill',
+    MoveMode? mode,
+    MoveEventKind eventKind = MoveEventKind.production,
+    int difficultyBand = 2,
+    bool userAdjusted = false,
   }) {
-    return MoveEventsCompanion.insert(
+    return repo.commit(
       sessionId: sessionId,
-      kindId: h.kindId,
-      heuristicTag: h.tagId,
+      heuristic: h,
       latencyMs: latencyMs,
       wasCorrect: wasCorrect,
       hintRequested: hintRequested,
-      hintStepReached: Value(hintStepReached),
-      contaminatedFlag: contaminated,
+      hintStepReached: hintStepReached,
+      contaminated: contaminated,
       idleSoftSignal: false,
       motionSignal: false,
       lifecycleSignal: false,
+      createdAt: DateTime.fromMillisecondsSinceEpoch(createdAt),
+      chainIndex: chainIndex,
       mode: mode,
-      chainIndex: Value(chainIndex),
-      createdAt: createdAt,
+      eventKind: eventKind,
+      difficultyBand: difficultyBand,
+      userAdjusted: userAdjusted,
     );
   }
 
-  test('insert + findById round-trip preserves all fields', () async {
-    final id = await repo.insert(
-      event(h: _parityFill, latencyMs: 1234, createdAt: 1, hintStepReached: 2),
+  test('commit + findById round-trip preserves all fields', () async {
+    final id = await commit(
+      h: _parityFill,
+      latencyMs: 1234,
+      createdAt: 1,
+      hintStepReached: 2,
     );
 
     final row = await repo.findById(id);
@@ -77,10 +83,64 @@ void main() {
     expect(row.chainIndex, 0);
   });
 
+  test('commit defaults: mode null, eventKind production, band=2, '
+      'userAdjusted=false', () async {
+    final id = await commit(h: _parityFill, latencyMs: 100, createdAt: 1);
+    final row = await repo.findById(id);
+    expect(row!.mode, isNull,
+        reason: 'no propagation/hunt classification by default');
+    expect(row.eventKind, 'production');
+    expect(row.difficultyBand, 2);
+    expect(row.userAdjusted, isFalse);
+  });
+
+  test('commit with explicit MoveMode persists wire string', () async {
+    final propId = await commit(
+      h: _parityFill,
+      latencyMs: 100,
+      createdAt: 1,
+      mode: MoveMode.propagation,
+    );
+    final huntId = await commit(
+      h: _parityFill,
+      latencyMs: 200,
+      createdAt: 2,
+      mode: MoveMode.hunt,
+    );
+
+    expect((await repo.findById(propId))!.mode, 'propagation');
+    expect((await repo.findById(huntId))!.mode, 'hunt');
+  });
+
+  test('commit with band/userAdjusted persists denormalized fields',
+      () async {
+    final id = await commit(
+      h: _parityFill,
+      latencyMs: 100,
+      createdAt: 1,
+      difficultyBand: 3,
+      userAdjusted: true,
+    );
+    final row = await repo.findById(id);
+    expect(row!.difficultyBand, 3);
+    expect(row.userAdjusted, isTrue);
+  });
+
+  test('commit with recognition eventKind persists wire string', () async {
+    final id = await commit(
+      h: _parityFill,
+      latencyMs: 100,
+      createdAt: 1,
+      eventKind: MoveEventKind.recognitionFalseAlarm,
+    );
+    final row = await repo.findById(id);
+    expect(row!.eventKind, 'recognition_false_alarm');
+  });
+
   test('watchRecent streams newest first and respects limit', () async {
-    await repo.insert(event(h: _parityFill, latencyMs: 100, createdAt: 1));
-    await repo.insert(event(h: _parityFill, latencyMs: 200, createdAt: 5));
-    await repo.insert(event(h: _parityFill, latencyMs: 300, createdAt: 3));
+    await commit(h: _parityFill, latencyMs: 100, createdAt: 1);
+    await commit(h: _parityFill, latencyMs: 200, createdAt: 5);
+    await commit(h: _parityFill, latencyMs: 300, createdAt: 3);
 
     final rows = await repo.watchRecent(_parityFill, limit: 100).first;
 
@@ -92,11 +152,12 @@ void main() {
   });
 
   test('watchRecent excludes contaminated events by default', () async {
-    await repo.insert(
-      event(h: _parityFill, latencyMs: 100, createdAt: 1),
-    );
-    await repo.insert(
-      event(h: _parityFill, latencyMs: 200, createdAt: 2, contaminated: true),
+    await commit(h: _parityFill, latencyMs: 100, createdAt: 1);
+    await commit(
+      h: _parityFill,
+      latencyMs: 200,
+      createdAt: 2,
+      contaminated: true,
     );
 
     final clean = await repo.watchRecent(_parityFill).first;
@@ -109,9 +170,10 @@ void main() {
     expect(all.length, 2);
   });
 
-  test('watchRecent filters by Heuristic — same kind, different tag', () async {
-    await repo.insert(event(h: _parityFill, latencyMs: 100, createdAt: 1));
-    await repo.insert(event(h: _trioAvoidance, latencyMs: 200, createdAt: 2));
+  test('watchRecent filters by Heuristic — same kind, different tag',
+      () async {
+    await commit(h: _parityFill, latencyMs: 100, createdAt: 1);
+    await commit(h: _trioAvoidance, latencyMs: 200, createdAt: 2);
 
     final parity = await repo.watchRecent(_parityFill).first;
     final trio = await repo.watchRecent(_trioAvoidance).first;
@@ -126,22 +188,46 @@ void main() {
   });
 
   test('chainIndex defaults to 0 and round-trips', () async {
-    await repo.insert(event(h: _parityFill, latencyMs: 100, createdAt: 1));
-    await repo.insert(
-      event(h: _parityFill, latencyMs: 100, createdAt: 2, chainIndex: 1),
-    );
+    await commit(h: _parityFill, latencyMs: 100, createdAt: 1);
+    await commit(h: _parityFill, latencyMs: 100, createdAt: 2, chainIndex: 1);
 
     final rows = await repo.watchRecent(_parityFill).first;
     expect(rows.map((r) => r.chainIndex).toList(), [1, 0]);
   });
 
   test('cascade delete via Sessions FK', () async {
-    await repo.insert(event(h: _parityFill, latencyMs: 100, createdAt: 1));
-    await repo.insert(event(h: _parityFill, latencyMs: 100, createdAt: 2));
+    await commit(h: _parityFill, latencyMs: 100, createdAt: 1);
+    await commit(h: _parityFill, latencyMs: 100, createdAt: 2);
 
     await (db.delete(db.sessions)..where((t) => t.id.equals(sessionId))).go();
 
     final rows = await repo.watchRecent(_parityFill).first;
     expect(rows, isEmpty, reason: 'ON DELETE CASCADE removes child events');
+  });
+
+  group('SessionsRepository', () {
+    test('startSession persists band and userAdjusted', () async {
+      final id = await sessions.startSession(
+        mode: 'full_game',
+        startedAt: DateTime.utc(2026, 5, 1),
+        band: 3,
+        userAdjusted: true,
+      );
+      final row = await sessions.findById(id);
+      expect(row!.mode, 'full_game');
+      expect(row.difficultyBand, 3);
+      expect(row.userAdjusted, isTrue);
+    });
+
+    test('startSession defaults match schema (band=2, userAdjusted=false)',
+        () async {
+      final id = await sessions.startSession(
+        mode: 'drill',
+        startedAt: DateTime.utc(2026, 5, 1),
+      );
+      final row = await sessions.findById(id);
+      expect(row!.difficultyBand, 2);
+      expect(row.userAdjusted, isFalse);
+    });
   });
 }

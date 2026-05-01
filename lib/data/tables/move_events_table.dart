@@ -38,12 +38,33 @@ class MoveEvents extends Table {
   BoolColumn get motionSignal => boolean()();
   BoolColumn get lifecycleSignal => boolean()();
 
-  /// 'full_game' or 'drill'. Mirrors [Sessions.mode] for fast filters.
-  TextColumn get mode => text()();
+  /// 'propagation' | 'hunt' (R31). Партионный режим (full_game/drill)
+  /// живёт в [Sessions.mode]; здесь — только классификация хода.
+  /// Nullable: первый ход партии или пока классификатор не вынес
+  /// решение.
+  TextColumn get mode => text().nullable()();
+
+  /// 'production' | 'recognition_hit' | 'recognition_correct_reject' |
+  /// 'recognition_false_alarm' (R29). Phase C всегда 'production';
+  /// recognition-варианты добавляются в Phase D (U12) без миграции.
+  TextColumn get eventKind =>
+      text().withDefault(const Constant('production'))();
 
   /// 0 = the originating drill / full-game move; 1..N = ChainExtension
   /// follow-ons within the same drill card (R5).
   IntColumn get chainIndex => integer().withDefault(const Constant(0))();
+
+  /// Difficulty band под которым партия была сгенерирована: 1=easy,
+  /// 2=medium, 3=hard (R36). Denormalized с [Sessions.difficultyBand]
+  /// для будущего factorial-анализа без JOIN. В v1 mastery/FSRS не
+  /// читают это поле.
+  IntColumn get difficultyBand => integer().withDefault(const Constant(2))();
+
+  /// Был ли band в этой партии подкручен пользователем post-session
+  /// nudge-кнопкой относительно автоматической ротации (R38).
+  /// Denormalized с [Sessions.userAdjusted].
+  BoolColumn get userAdjusted =>
+      boolean().withDefault(const Constant(false))();
 
   IntColumn get createdAt => integer()();
 }

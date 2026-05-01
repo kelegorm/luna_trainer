@@ -64,6 +64,33 @@ class $SessionsTable extends Sessions
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _difficultyBandMeta = const VerificationMeta(
+    'difficultyBand',
+  );
+  @override
+  late final GeneratedColumn<int> difficultyBand = GeneratedColumn<int>(
+    'difficulty_band',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(2),
+  );
+  static const VerificationMeta _userAdjustedMeta = const VerificationMeta(
+    'userAdjusted',
+  );
+  @override
+  late final GeneratedColumn<bool> userAdjusted = GeneratedColumn<bool>(
+    'user_adjusted',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("user_adjusted" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -71,6 +98,8 @@ class $SessionsTable extends Sessions
     startedAt,
     endedAt,
     outcomeJson,
+    difficultyBand,
+    userAdjusted,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -118,6 +147,24 @@ class $SessionsTable extends Sessions
         ),
       );
     }
+    if (data.containsKey('difficulty_band')) {
+      context.handle(
+        _difficultyBandMeta,
+        difficultyBand.isAcceptableOrUnknown(
+          data['difficulty_band']!,
+          _difficultyBandMeta,
+        ),
+      );
+    }
+    if (data.containsKey('user_adjusted')) {
+      context.handle(
+        _userAdjustedMeta,
+        userAdjusted.isAcceptableOrUnknown(
+          data['user_adjusted']!,
+          _userAdjustedMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -147,6 +194,14 @@ class $SessionsTable extends Sessions
         DriftSqlType.string,
         data['${effectivePrefix}outcome_json'],
       ),
+      difficultyBand: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}difficulty_band'],
+      )!,
+      userAdjusted: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}user_adjusted'],
+      )!,
     );
   }
 
@@ -169,12 +224,23 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
   /// drill-card ids, etc.). Free-form so summary shape can evolve
   /// without migrations.
   final String? outcomeJson;
+
+  /// Difficulty band под которым партия была сгенерирована: 1=easy,
+  /// 2=medium, 3=hard (R36). Authoritative для партии — MoveEvent-ы
+  /// наследуют это значение при записи.
+  final int difficultyBand;
+
+  /// Был ли band подкручен пользователем post-session nudge-кнопкой
+  /// относительно автоматической ротации rotator-а (R38).
+  final bool userAdjusted;
   const SessionRow({
     required this.id,
     required this.mode,
     required this.startedAt,
     this.endedAt,
     this.outcomeJson,
+    required this.difficultyBand,
+    required this.userAdjusted,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -188,6 +254,8 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
     if (!nullToAbsent || outcomeJson != null) {
       map['outcome_json'] = Variable<String>(outcomeJson);
     }
+    map['difficulty_band'] = Variable<int>(difficultyBand);
+    map['user_adjusted'] = Variable<bool>(userAdjusted);
     return map;
   }
 
@@ -202,6 +270,8 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
       outcomeJson: outcomeJson == null && nullToAbsent
           ? const Value.absent()
           : Value(outcomeJson),
+      difficultyBand: Value(difficultyBand),
+      userAdjusted: Value(userAdjusted),
     );
   }
 
@@ -216,6 +286,8 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
       startedAt: serializer.fromJson<int>(json['startedAt']),
       endedAt: serializer.fromJson<int?>(json['endedAt']),
       outcomeJson: serializer.fromJson<String?>(json['outcomeJson']),
+      difficultyBand: serializer.fromJson<int>(json['difficultyBand']),
+      userAdjusted: serializer.fromJson<bool>(json['userAdjusted']),
     );
   }
   @override
@@ -227,6 +299,8 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
       'startedAt': serializer.toJson<int>(startedAt),
       'endedAt': serializer.toJson<int?>(endedAt),
       'outcomeJson': serializer.toJson<String?>(outcomeJson),
+      'difficultyBand': serializer.toJson<int>(difficultyBand),
+      'userAdjusted': serializer.toJson<bool>(userAdjusted),
     };
   }
 
@@ -236,12 +310,16 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
     int? startedAt,
     Value<int?> endedAt = const Value.absent(),
     Value<String?> outcomeJson = const Value.absent(),
+    int? difficultyBand,
+    bool? userAdjusted,
   }) => SessionRow(
     id: id ?? this.id,
     mode: mode ?? this.mode,
     startedAt: startedAt ?? this.startedAt,
     endedAt: endedAt.present ? endedAt.value : this.endedAt,
     outcomeJson: outcomeJson.present ? outcomeJson.value : this.outcomeJson,
+    difficultyBand: difficultyBand ?? this.difficultyBand,
+    userAdjusted: userAdjusted ?? this.userAdjusted,
   );
   SessionRow copyWithCompanion(SessionsCompanion data) {
     return SessionRow(
@@ -252,6 +330,12 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
       outcomeJson: data.outcomeJson.present
           ? data.outcomeJson.value
           : this.outcomeJson,
+      difficultyBand: data.difficultyBand.present
+          ? data.difficultyBand.value
+          : this.difficultyBand,
+      userAdjusted: data.userAdjusted.present
+          ? data.userAdjusted.value
+          : this.userAdjusted,
     );
   }
 
@@ -262,13 +346,23 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
           ..write('mode: $mode, ')
           ..write('startedAt: $startedAt, ')
           ..write('endedAt: $endedAt, ')
-          ..write('outcomeJson: $outcomeJson')
+          ..write('outcomeJson: $outcomeJson, ')
+          ..write('difficultyBand: $difficultyBand, ')
+          ..write('userAdjusted: $userAdjusted')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(id, mode, startedAt, endedAt, outcomeJson);
+  int get hashCode => Object.hash(
+    id,
+    mode,
+    startedAt,
+    endedAt,
+    outcomeJson,
+    difficultyBand,
+    userAdjusted,
+  );
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -277,7 +371,9 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
           other.mode == this.mode &&
           other.startedAt == this.startedAt &&
           other.endedAt == this.endedAt &&
-          other.outcomeJson == this.outcomeJson);
+          other.outcomeJson == this.outcomeJson &&
+          other.difficultyBand == this.difficultyBand &&
+          other.userAdjusted == this.userAdjusted);
 }
 
 class SessionsCompanion extends UpdateCompanion<SessionRow> {
@@ -286,12 +382,16 @@ class SessionsCompanion extends UpdateCompanion<SessionRow> {
   final Value<int> startedAt;
   final Value<int?> endedAt;
   final Value<String?> outcomeJson;
+  final Value<int> difficultyBand;
+  final Value<bool> userAdjusted;
   const SessionsCompanion({
     this.id = const Value.absent(),
     this.mode = const Value.absent(),
     this.startedAt = const Value.absent(),
     this.endedAt = const Value.absent(),
     this.outcomeJson = const Value.absent(),
+    this.difficultyBand = const Value.absent(),
+    this.userAdjusted = const Value.absent(),
   });
   SessionsCompanion.insert({
     this.id = const Value.absent(),
@@ -299,6 +399,8 @@ class SessionsCompanion extends UpdateCompanion<SessionRow> {
     required int startedAt,
     this.endedAt = const Value.absent(),
     this.outcomeJson = const Value.absent(),
+    this.difficultyBand = const Value.absent(),
+    this.userAdjusted = const Value.absent(),
   }) : mode = Value(mode),
        startedAt = Value(startedAt);
   static Insertable<SessionRow> custom({
@@ -307,6 +409,8 @@ class SessionsCompanion extends UpdateCompanion<SessionRow> {
     Expression<int>? startedAt,
     Expression<int>? endedAt,
     Expression<String>? outcomeJson,
+    Expression<int>? difficultyBand,
+    Expression<bool>? userAdjusted,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -314,6 +418,8 @@ class SessionsCompanion extends UpdateCompanion<SessionRow> {
       if (startedAt != null) 'started_at': startedAt,
       if (endedAt != null) 'ended_at': endedAt,
       if (outcomeJson != null) 'outcome_json': outcomeJson,
+      if (difficultyBand != null) 'difficulty_band': difficultyBand,
+      if (userAdjusted != null) 'user_adjusted': userAdjusted,
     });
   }
 
@@ -323,6 +429,8 @@ class SessionsCompanion extends UpdateCompanion<SessionRow> {
     Value<int>? startedAt,
     Value<int?>? endedAt,
     Value<String?>? outcomeJson,
+    Value<int>? difficultyBand,
+    Value<bool>? userAdjusted,
   }) {
     return SessionsCompanion(
       id: id ?? this.id,
@@ -330,6 +438,8 @@ class SessionsCompanion extends UpdateCompanion<SessionRow> {
       startedAt: startedAt ?? this.startedAt,
       endedAt: endedAt ?? this.endedAt,
       outcomeJson: outcomeJson ?? this.outcomeJson,
+      difficultyBand: difficultyBand ?? this.difficultyBand,
+      userAdjusted: userAdjusted ?? this.userAdjusted,
     );
   }
 
@@ -351,6 +461,12 @@ class SessionsCompanion extends UpdateCompanion<SessionRow> {
     if (outcomeJson.present) {
       map['outcome_json'] = Variable<String>(outcomeJson.value);
     }
+    if (difficultyBand.present) {
+      map['difficulty_band'] = Variable<int>(difficultyBand.value);
+    }
+    if (userAdjusted.present) {
+      map['user_adjusted'] = Variable<bool>(userAdjusted.value);
+    }
     return map;
   }
 
@@ -361,7 +477,9 @@ class SessionsCompanion extends UpdateCompanion<SessionRow> {
           ..write('mode: $mode, ')
           ..write('startedAt: $startedAt, ')
           ..write('endedAt: $endedAt, ')
-          ..write('outcomeJson: $outcomeJson')
+          ..write('outcomeJson: $outcomeJson, ')
+          ..write('difficultyBand: $difficultyBand, ')
+          ..write('userAdjusted: $userAdjusted')
           ..write(')'))
         .toString();
   }
@@ -532,9 +650,21 @@ class $MoveEventsTable extends MoveEvents
   late final GeneratedColumn<String> mode = GeneratedColumn<String>(
     'mode',
     aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _eventKindMeta = const VerificationMeta(
+    'eventKind',
+  );
+  @override
+  late final GeneratedColumn<String> eventKind = GeneratedColumn<String>(
+    'event_kind',
+    aliasedName,
     false,
     type: DriftSqlType.string,
-    requiredDuringInsert: true,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('production'),
   );
   static const VerificationMeta _chainIndexMeta = const VerificationMeta(
     'chainIndex',
@@ -547,6 +677,33 @@ class $MoveEventsTable extends MoveEvents
     type: DriftSqlType.int,
     requiredDuringInsert: false,
     defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _difficultyBandMeta = const VerificationMeta(
+    'difficultyBand',
+  );
+  @override
+  late final GeneratedColumn<int> difficultyBand = GeneratedColumn<int>(
+    'difficulty_band',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(2),
+  );
+  static const VerificationMeta _userAdjustedMeta = const VerificationMeta(
+    'userAdjusted',
+  );
+  @override
+  late final GeneratedColumn<bool> userAdjusted = GeneratedColumn<bool>(
+    'user_adjusted',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("user_adjusted" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
   );
   static const VerificationMeta _createdAtMeta = const VerificationMeta(
     'createdAt',
@@ -574,7 +731,10 @@ class $MoveEventsTable extends MoveEvents
     motionSignal,
     lifecycleSignal,
     mode,
+    eventKind,
     chainIndex,
+    difficultyBand,
+    userAdjusted,
     createdAt,
   ];
   @override
@@ -704,13 +864,35 @@ class $MoveEventsTable extends MoveEvents
         _modeMeta,
         mode.isAcceptableOrUnknown(data['mode']!, _modeMeta),
       );
-    } else if (isInserting) {
-      context.missing(_modeMeta);
+    }
+    if (data.containsKey('event_kind')) {
+      context.handle(
+        _eventKindMeta,
+        eventKind.isAcceptableOrUnknown(data['event_kind']!, _eventKindMeta),
+      );
     }
     if (data.containsKey('chain_index')) {
       context.handle(
         _chainIndexMeta,
         chainIndex.isAcceptableOrUnknown(data['chain_index']!, _chainIndexMeta),
+      );
+    }
+    if (data.containsKey('difficulty_band')) {
+      context.handle(
+        _difficultyBandMeta,
+        difficultyBand.isAcceptableOrUnknown(
+          data['difficulty_band']!,
+          _difficultyBandMeta,
+        ),
+      );
+    }
+    if (data.containsKey('user_adjusted')) {
+      context.handle(
+        _userAdjustedMeta,
+        userAdjusted.isAcceptableOrUnknown(
+          data['user_adjusted']!,
+          _userAdjustedMeta,
+        ),
       );
     }
     if (data.containsKey('created_at')) {
@@ -781,10 +963,22 @@ class $MoveEventsTable extends MoveEvents
       mode: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}mode'],
+      ),
+      eventKind: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}event_kind'],
       )!,
       chainIndex: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}chain_index'],
+      )!,
+      difficultyBand: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}difficulty_band'],
+      )!,
+      userAdjusted: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}user_adjusted'],
       )!,
       createdAt: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
@@ -826,12 +1020,31 @@ class MoveEventRow extends DataClass implements Insertable<MoveEventRow> {
   final bool motionSignal;
   final bool lifecycleSignal;
 
-  /// 'full_game' or 'drill'. Mirrors [Sessions.mode] for fast filters.
-  final String mode;
+  /// 'propagation' | 'hunt' (R31). Партионный режим (full_game/drill)
+  /// живёт в [Sessions.mode]; здесь — только классификация хода.
+  /// Nullable: первый ход партии или пока классификатор не вынес
+  /// решение.
+  final String? mode;
+
+  /// 'production' | 'recognition_hit' | 'recognition_correct_reject' |
+  /// 'recognition_false_alarm' (R29). Phase C всегда 'production';
+  /// recognition-варианты добавляются в Phase D (U12) без миграции.
+  final String eventKind;
 
   /// 0 = the originating drill / full-game move; 1..N = ChainExtension
   /// follow-ons within the same drill card (R5).
   final int chainIndex;
+
+  /// Difficulty band под которым партия была сгенерирована: 1=easy,
+  /// 2=medium, 3=hard (R36). Denormalized с [Sessions.difficultyBand]
+  /// для будущего factorial-анализа без JOIN. В v1 mastery/FSRS не
+  /// читают это поле.
+  final int difficultyBand;
+
+  /// Был ли band в этой партии подкручен пользователем post-session
+  /// nudge-кнопкой относительно автоматической ротации (R38).
+  /// Denormalized с [Sessions.userAdjusted].
+  final bool userAdjusted;
   final int createdAt;
   const MoveEventRow({
     required this.id,
@@ -846,8 +1059,11 @@ class MoveEventRow extends DataClass implements Insertable<MoveEventRow> {
     required this.idleSoftSignal,
     required this.motionSignal,
     required this.lifecycleSignal,
-    required this.mode,
+    this.mode,
+    required this.eventKind,
     required this.chainIndex,
+    required this.difficultyBand,
+    required this.userAdjusted,
     required this.createdAt,
   });
   @override
@@ -865,8 +1081,13 @@ class MoveEventRow extends DataClass implements Insertable<MoveEventRow> {
     map['idle_soft_signal'] = Variable<bool>(idleSoftSignal);
     map['motion_signal'] = Variable<bool>(motionSignal);
     map['lifecycle_signal'] = Variable<bool>(lifecycleSignal);
-    map['mode'] = Variable<String>(mode);
+    if (!nullToAbsent || mode != null) {
+      map['mode'] = Variable<String>(mode);
+    }
+    map['event_kind'] = Variable<String>(eventKind);
     map['chain_index'] = Variable<int>(chainIndex);
+    map['difficulty_band'] = Variable<int>(difficultyBand);
+    map['user_adjusted'] = Variable<bool>(userAdjusted);
     map['created_at'] = Variable<int>(createdAt);
     return map;
   }
@@ -885,8 +1106,11 @@ class MoveEventRow extends DataClass implements Insertable<MoveEventRow> {
       idleSoftSignal: Value(idleSoftSignal),
       motionSignal: Value(motionSignal),
       lifecycleSignal: Value(lifecycleSignal),
-      mode: Value(mode),
+      mode: mode == null && nullToAbsent ? const Value.absent() : Value(mode),
+      eventKind: Value(eventKind),
       chainIndex: Value(chainIndex),
+      difficultyBand: Value(difficultyBand),
+      userAdjusted: Value(userAdjusted),
       createdAt: Value(createdAt),
     );
   }
@@ -909,8 +1133,11 @@ class MoveEventRow extends DataClass implements Insertable<MoveEventRow> {
       idleSoftSignal: serializer.fromJson<bool>(json['idleSoftSignal']),
       motionSignal: serializer.fromJson<bool>(json['motionSignal']),
       lifecycleSignal: serializer.fromJson<bool>(json['lifecycleSignal']),
-      mode: serializer.fromJson<String>(json['mode']),
+      mode: serializer.fromJson<String?>(json['mode']),
+      eventKind: serializer.fromJson<String>(json['eventKind']),
       chainIndex: serializer.fromJson<int>(json['chainIndex']),
+      difficultyBand: serializer.fromJson<int>(json['difficultyBand']),
+      userAdjusted: serializer.fromJson<bool>(json['userAdjusted']),
       createdAt: serializer.fromJson<int>(json['createdAt']),
     );
   }
@@ -930,8 +1157,11 @@ class MoveEventRow extends DataClass implements Insertable<MoveEventRow> {
       'idleSoftSignal': serializer.toJson<bool>(idleSoftSignal),
       'motionSignal': serializer.toJson<bool>(motionSignal),
       'lifecycleSignal': serializer.toJson<bool>(lifecycleSignal),
-      'mode': serializer.toJson<String>(mode),
+      'mode': serializer.toJson<String?>(mode),
+      'eventKind': serializer.toJson<String>(eventKind),
       'chainIndex': serializer.toJson<int>(chainIndex),
+      'difficultyBand': serializer.toJson<int>(difficultyBand),
+      'userAdjusted': serializer.toJson<bool>(userAdjusted),
       'createdAt': serializer.toJson<int>(createdAt),
     };
   }
@@ -949,8 +1179,11 @@ class MoveEventRow extends DataClass implements Insertable<MoveEventRow> {
     bool? idleSoftSignal,
     bool? motionSignal,
     bool? lifecycleSignal,
-    String? mode,
+    Value<String?> mode = const Value.absent(),
+    String? eventKind,
     int? chainIndex,
+    int? difficultyBand,
+    bool? userAdjusted,
     int? createdAt,
   }) => MoveEventRow(
     id: id ?? this.id,
@@ -965,8 +1198,11 @@ class MoveEventRow extends DataClass implements Insertable<MoveEventRow> {
     idleSoftSignal: idleSoftSignal ?? this.idleSoftSignal,
     motionSignal: motionSignal ?? this.motionSignal,
     lifecycleSignal: lifecycleSignal ?? this.lifecycleSignal,
-    mode: mode ?? this.mode,
+    mode: mode.present ? mode.value : this.mode,
+    eventKind: eventKind ?? this.eventKind,
     chainIndex: chainIndex ?? this.chainIndex,
+    difficultyBand: difficultyBand ?? this.difficultyBand,
+    userAdjusted: userAdjusted ?? this.userAdjusted,
     createdAt: createdAt ?? this.createdAt,
   );
   MoveEventRow copyWithCompanion(MoveEventsCompanion data) {
@@ -1000,9 +1236,16 @@ class MoveEventRow extends DataClass implements Insertable<MoveEventRow> {
           ? data.lifecycleSignal.value
           : this.lifecycleSignal,
       mode: data.mode.present ? data.mode.value : this.mode,
+      eventKind: data.eventKind.present ? data.eventKind.value : this.eventKind,
       chainIndex: data.chainIndex.present
           ? data.chainIndex.value
           : this.chainIndex,
+      difficultyBand: data.difficultyBand.present
+          ? data.difficultyBand.value
+          : this.difficultyBand,
+      userAdjusted: data.userAdjusted.present
+          ? data.userAdjusted.value
+          : this.userAdjusted,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
     );
   }
@@ -1023,7 +1266,10 @@ class MoveEventRow extends DataClass implements Insertable<MoveEventRow> {
           ..write('motionSignal: $motionSignal, ')
           ..write('lifecycleSignal: $lifecycleSignal, ')
           ..write('mode: $mode, ')
+          ..write('eventKind: $eventKind, ')
           ..write('chainIndex: $chainIndex, ')
+          ..write('difficultyBand: $difficultyBand, ')
+          ..write('userAdjusted: $userAdjusted, ')
           ..write('createdAt: $createdAt')
           ..write(')'))
         .toString();
@@ -1044,7 +1290,10 @@ class MoveEventRow extends DataClass implements Insertable<MoveEventRow> {
     motionSignal,
     lifecycleSignal,
     mode,
+    eventKind,
     chainIndex,
+    difficultyBand,
+    userAdjusted,
     createdAt,
   );
   @override
@@ -1064,7 +1313,10 @@ class MoveEventRow extends DataClass implements Insertable<MoveEventRow> {
           other.motionSignal == this.motionSignal &&
           other.lifecycleSignal == this.lifecycleSignal &&
           other.mode == this.mode &&
+          other.eventKind == this.eventKind &&
           other.chainIndex == this.chainIndex &&
+          other.difficultyBand == this.difficultyBand &&
+          other.userAdjusted == this.userAdjusted &&
           other.createdAt == this.createdAt);
 }
 
@@ -1081,8 +1333,11 @@ class MoveEventsCompanion extends UpdateCompanion<MoveEventRow> {
   final Value<bool> idleSoftSignal;
   final Value<bool> motionSignal;
   final Value<bool> lifecycleSignal;
-  final Value<String> mode;
+  final Value<String?> mode;
+  final Value<String> eventKind;
   final Value<int> chainIndex;
+  final Value<int> difficultyBand;
+  final Value<bool> userAdjusted;
   final Value<int> createdAt;
   const MoveEventsCompanion({
     this.id = const Value.absent(),
@@ -1098,7 +1353,10 @@ class MoveEventsCompanion extends UpdateCompanion<MoveEventRow> {
     this.motionSignal = const Value.absent(),
     this.lifecycleSignal = const Value.absent(),
     this.mode = const Value.absent(),
+    this.eventKind = const Value.absent(),
     this.chainIndex = const Value.absent(),
+    this.difficultyBand = const Value.absent(),
+    this.userAdjusted = const Value.absent(),
     this.createdAt = const Value.absent(),
   });
   MoveEventsCompanion.insert({
@@ -1114,8 +1372,11 @@ class MoveEventsCompanion extends UpdateCompanion<MoveEventRow> {
     required bool idleSoftSignal,
     required bool motionSignal,
     required bool lifecycleSignal,
-    required String mode,
+    this.mode = const Value.absent(),
+    this.eventKind = const Value.absent(),
     this.chainIndex = const Value.absent(),
+    this.difficultyBand = const Value.absent(),
+    this.userAdjusted = const Value.absent(),
     required int createdAt,
   }) : sessionId = Value(sessionId),
        kindId = Value(kindId),
@@ -1127,7 +1388,6 @@ class MoveEventsCompanion extends UpdateCompanion<MoveEventRow> {
        idleSoftSignal = Value(idleSoftSignal),
        motionSignal = Value(motionSignal),
        lifecycleSignal = Value(lifecycleSignal),
-       mode = Value(mode),
        createdAt = Value(createdAt);
   static Insertable<MoveEventRow> custom({
     Expression<int>? id,
@@ -1143,7 +1403,10 @@ class MoveEventsCompanion extends UpdateCompanion<MoveEventRow> {
     Expression<bool>? motionSignal,
     Expression<bool>? lifecycleSignal,
     Expression<String>? mode,
+    Expression<String>? eventKind,
     Expression<int>? chainIndex,
+    Expression<int>? difficultyBand,
+    Expression<bool>? userAdjusted,
     Expression<int>? createdAt,
   }) {
     return RawValuesInsertable({
@@ -1160,7 +1423,10 @@ class MoveEventsCompanion extends UpdateCompanion<MoveEventRow> {
       if (motionSignal != null) 'motion_signal': motionSignal,
       if (lifecycleSignal != null) 'lifecycle_signal': lifecycleSignal,
       if (mode != null) 'mode': mode,
+      if (eventKind != null) 'event_kind': eventKind,
       if (chainIndex != null) 'chain_index': chainIndex,
+      if (difficultyBand != null) 'difficulty_band': difficultyBand,
+      if (userAdjusted != null) 'user_adjusted': userAdjusted,
       if (createdAt != null) 'created_at': createdAt,
     });
   }
@@ -1178,8 +1444,11 @@ class MoveEventsCompanion extends UpdateCompanion<MoveEventRow> {
     Value<bool>? idleSoftSignal,
     Value<bool>? motionSignal,
     Value<bool>? lifecycleSignal,
-    Value<String>? mode,
+    Value<String?>? mode,
+    Value<String>? eventKind,
     Value<int>? chainIndex,
+    Value<int>? difficultyBand,
+    Value<bool>? userAdjusted,
     Value<int>? createdAt,
   }) {
     return MoveEventsCompanion(
@@ -1196,7 +1465,10 @@ class MoveEventsCompanion extends UpdateCompanion<MoveEventRow> {
       motionSignal: motionSignal ?? this.motionSignal,
       lifecycleSignal: lifecycleSignal ?? this.lifecycleSignal,
       mode: mode ?? this.mode,
+      eventKind: eventKind ?? this.eventKind,
       chainIndex: chainIndex ?? this.chainIndex,
+      difficultyBand: difficultyBand ?? this.difficultyBand,
+      userAdjusted: userAdjusted ?? this.userAdjusted,
       createdAt: createdAt ?? this.createdAt,
     );
   }
@@ -1243,8 +1515,17 @@ class MoveEventsCompanion extends UpdateCompanion<MoveEventRow> {
     if (mode.present) {
       map['mode'] = Variable<String>(mode.value);
     }
+    if (eventKind.present) {
+      map['event_kind'] = Variable<String>(eventKind.value);
+    }
     if (chainIndex.present) {
       map['chain_index'] = Variable<int>(chainIndex.value);
+    }
+    if (difficultyBand.present) {
+      map['difficulty_band'] = Variable<int>(difficultyBand.value);
+    }
+    if (userAdjusted.present) {
+      map['user_adjusted'] = Variable<bool>(userAdjusted.value);
     }
     if (createdAt.present) {
       map['created_at'] = Variable<int>(createdAt.value);
@@ -1268,7 +1549,10 @@ class MoveEventsCompanion extends UpdateCompanion<MoveEventRow> {
           ..write('motionSignal: $motionSignal, ')
           ..write('lifecycleSignal: $lifecycleSignal, ')
           ..write('mode: $mode, ')
+          ..write('eventKind: $eventKind, ')
           ..write('chainIndex: $chainIndex, ')
+          ..write('difficultyBand: $difficultyBand, ')
+          ..write('userAdjusted: $userAdjusted, ')
           ..write('createdAt: $createdAt')
           ..write(')'))
         .toString();
@@ -2446,6 +2730,8 @@ typedef $$SessionsTableCreateCompanionBuilder =
       required int startedAt,
       Value<int?> endedAt,
       Value<String?> outcomeJson,
+      Value<int> difficultyBand,
+      Value<bool> userAdjusted,
     });
 typedef $$SessionsTableUpdateCompanionBuilder =
     SessionsCompanion Function({
@@ -2454,6 +2740,8 @@ typedef $$SessionsTableUpdateCompanionBuilder =
       Value<int> startedAt,
       Value<int?> endedAt,
       Value<String?> outcomeJson,
+      Value<int> difficultyBand,
+      Value<bool> userAdjusted,
     });
 
 final class $$SessionsTableReferences
@@ -2510,6 +2798,16 @@ class $$SessionsTableFilterComposer
 
   ColumnFilters<String> get outcomeJson => $composableBuilder(
     column: $table.outcomeJson,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get difficultyBand => $composableBuilder(
+    column: $table.difficultyBand,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get userAdjusted => $composableBuilder(
+    column: $table.userAdjusted,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -2572,6 +2870,16 @@ class $$SessionsTableOrderingComposer
     column: $table.outcomeJson,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<int> get difficultyBand => $composableBuilder(
+    column: $table.difficultyBand,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get userAdjusted => $composableBuilder(
+    column: $table.userAdjusted,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$SessionsTableAnnotationComposer
@@ -2597,6 +2905,16 @@ class $$SessionsTableAnnotationComposer
 
   GeneratedColumn<String> get outcomeJson => $composableBuilder(
     column: $table.outcomeJson,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get difficultyBand => $composableBuilder(
+    column: $table.difficultyBand,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<bool> get userAdjusted => $composableBuilder(
+    column: $table.userAdjusted,
     builder: (column) => column,
   );
 
@@ -2659,12 +2977,16 @@ class $$SessionsTableTableManager
                 Value<int> startedAt = const Value.absent(),
                 Value<int?> endedAt = const Value.absent(),
                 Value<String?> outcomeJson = const Value.absent(),
+                Value<int> difficultyBand = const Value.absent(),
+                Value<bool> userAdjusted = const Value.absent(),
               }) => SessionsCompanion(
                 id: id,
                 mode: mode,
                 startedAt: startedAt,
                 endedAt: endedAt,
                 outcomeJson: outcomeJson,
+                difficultyBand: difficultyBand,
+                userAdjusted: userAdjusted,
               ),
           createCompanionCallback:
               ({
@@ -2673,12 +2995,16 @@ class $$SessionsTableTableManager
                 required int startedAt,
                 Value<int?> endedAt = const Value.absent(),
                 Value<String?> outcomeJson = const Value.absent(),
+                Value<int> difficultyBand = const Value.absent(),
+                Value<bool> userAdjusted = const Value.absent(),
               }) => SessionsCompanion.insert(
                 id: id,
                 mode: mode,
                 startedAt: startedAt,
                 endedAt: endedAt,
                 outcomeJson: outcomeJson,
+                difficultyBand: difficultyBand,
+                userAdjusted: userAdjusted,
               ),
           withReferenceMapper: (p0) => p0
               .map(
@@ -2749,8 +3075,11 @@ typedef $$MoveEventsTableCreateCompanionBuilder =
       required bool idleSoftSignal,
       required bool motionSignal,
       required bool lifecycleSignal,
-      required String mode,
+      Value<String?> mode,
+      Value<String> eventKind,
       Value<int> chainIndex,
+      Value<int> difficultyBand,
+      Value<bool> userAdjusted,
       required int createdAt,
     });
 typedef $$MoveEventsTableUpdateCompanionBuilder =
@@ -2767,8 +3096,11 @@ typedef $$MoveEventsTableUpdateCompanionBuilder =
       Value<bool> idleSoftSignal,
       Value<bool> motionSignal,
       Value<bool> lifecycleSignal,
-      Value<String> mode,
+      Value<String?> mode,
+      Value<String> eventKind,
       Value<int> chainIndex,
+      Value<int> difficultyBand,
+      Value<bool> userAdjusted,
       Value<int> createdAt,
     });
 
@@ -2865,8 +3197,23 @@ class $$MoveEventsTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
+  ColumnFilters<String> get eventKind => $composableBuilder(
+    column: $table.eventKind,
+    builder: (column) => ColumnFilters(column),
+  );
+
   ColumnFilters<int> get chainIndex => $composableBuilder(
     column: $table.chainIndex,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get difficultyBand => $composableBuilder(
+    column: $table.difficultyBand,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get userAdjusted => $composableBuilder(
+    column: $table.userAdjusted,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -2968,8 +3315,23 @@ class $$MoveEventsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get eventKind => $composableBuilder(
+    column: $table.eventKind,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<int> get chainIndex => $composableBuilder(
     column: $table.chainIndex,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get difficultyBand => $composableBuilder(
+    column: $table.difficultyBand,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get userAdjusted => $composableBuilder(
+    column: $table.userAdjusted,
     builder: (column) => ColumnOrderings(column),
   );
 
@@ -3063,8 +3425,21 @@ class $$MoveEventsTableAnnotationComposer
   GeneratedColumn<String> get mode =>
       $composableBuilder(column: $table.mode, builder: (column) => column);
 
+  GeneratedColumn<String> get eventKind =>
+      $composableBuilder(column: $table.eventKind, builder: (column) => column);
+
   GeneratedColumn<int> get chainIndex => $composableBuilder(
     column: $table.chainIndex,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get difficultyBand => $composableBuilder(
+    column: $table.difficultyBand,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<bool> get userAdjusted => $composableBuilder(
+    column: $table.userAdjusted,
     builder: (column) => column,
   );
 
@@ -3135,8 +3510,11 @@ class $$MoveEventsTableTableManager
                 Value<bool> idleSoftSignal = const Value.absent(),
                 Value<bool> motionSignal = const Value.absent(),
                 Value<bool> lifecycleSignal = const Value.absent(),
-                Value<String> mode = const Value.absent(),
+                Value<String?> mode = const Value.absent(),
+                Value<String> eventKind = const Value.absent(),
                 Value<int> chainIndex = const Value.absent(),
+                Value<int> difficultyBand = const Value.absent(),
+                Value<bool> userAdjusted = const Value.absent(),
                 Value<int> createdAt = const Value.absent(),
               }) => MoveEventsCompanion(
                 id: id,
@@ -3152,7 +3530,10 @@ class $$MoveEventsTableTableManager
                 motionSignal: motionSignal,
                 lifecycleSignal: lifecycleSignal,
                 mode: mode,
+                eventKind: eventKind,
                 chainIndex: chainIndex,
+                difficultyBand: difficultyBand,
+                userAdjusted: userAdjusted,
                 createdAt: createdAt,
               ),
           createCompanionCallback:
@@ -3169,8 +3550,11 @@ class $$MoveEventsTableTableManager
                 required bool idleSoftSignal,
                 required bool motionSignal,
                 required bool lifecycleSignal,
-                required String mode,
+                Value<String?> mode = const Value.absent(),
+                Value<String> eventKind = const Value.absent(),
                 Value<int> chainIndex = const Value.absent(),
+                Value<int> difficultyBand = const Value.absent(),
+                Value<bool> userAdjusted = const Value.absent(),
                 required int createdAt,
               }) => MoveEventsCompanion.insert(
                 id: id,
@@ -3186,7 +3570,10 @@ class $$MoveEventsTableTableManager
                 motionSignal: motionSignal,
                 lifecycleSignal: lifecycleSignal,
                 mode: mode,
+                eventKind: eventKind,
                 chainIndex: chainIndex,
+                difficultyBand: difficultyBand,
+                userAdjusted: userAdjusted,
                 createdAt: createdAt,
               ),
           withReferenceMapper: (p0) => p0
