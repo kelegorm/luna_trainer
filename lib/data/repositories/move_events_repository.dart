@@ -1,46 +1,13 @@
 import 'package:drift/drift.dart';
 
 import '../../engine/domain/heuristic.dart';
+import '../../engine/telemetry/move_event_kind.dart';
+import '../../engine/telemetry/move_mode_classifier.dart';
 import '../database.dart';
 import '../tables/move_events_table.dart';
 
-/// Classification of a single move along the propagation/hunt axis
-/// (R31). `null` means "not yet classified" — first move of a
-/// session, or a move recorded before the classifier had context.
-enum MoveMode {
-  /// Прежний ход в радиусе ≤1 клетки или связан знаком =/× и
-  /// Δt ≤ 5s — пользователь продолжает ту же локальную нить.
-  propagation,
-
-  /// Ход через половину доски без связи с предыдущим — пользователь
-  /// сканирует доску в поиске следующего хода.
-  hunt,
-}
-
-/// Тип события для drill-flow (R29). В Phase C пишется только
-/// `production`; recognition-варианты добавляются в Phase D (U12).
-enum MoveEventKind {
-  production,
-  recognitionHit,
-  recognitionCorrectReject,
-  recognitionFalseAlarm,
-}
-
-extension MoveModeWire on MoveMode {
-  String get wire => switch (this) {
-        MoveMode.propagation => 'propagation',
-        MoveMode.hunt => 'hunt',
-      };
-}
-
-extension MoveEventKindWire on MoveEventKind {
-  String get wire => switch (this) {
-        MoveEventKind.production => 'production',
-        MoveEventKind.recognitionHit => 'recognition_hit',
-        MoveEventKind.recognitionCorrectReject => 'recognition_correct_reject',
-        MoveEventKind.recognitionFalseAlarm => 'recognition_false_alarm',
-      };
-}
+export '../../engine/telemetry/move_event_kind.dart' show MoveEventKind;
+export '../../engine/telemetry/move_mode_classifier.dart' show MoveMode;
 
 /// Thin wrapper over the [MoveEvents] table. Holds zero business
 /// logic — mastery scoring, contamination filtering, FSRS rating all
