@@ -29,4 +29,12 @@ class FsrsRepository {
       ..orderBy([(t) => OrderingTerm.asc(t.dueAt)]);
     return query.get();
   }
+
+  /// Every FSRS card row, regardless of due date. Drill selector uses
+  /// this to avoid dropping non-due cards into weakness fill — once a
+  /// heuristic enters the spaced-repetition cycle, FSRS owns its
+  /// scheduling.
+  Future<List<FsrsCardRow>> all() {
+    return _db.select(_db.fsrsCards).get();
+  }
 }
