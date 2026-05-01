@@ -26,4 +26,11 @@ class MasteryRepository {
   Stream<List<MasteryStateRow>> watchAll() {
     return _db.select(_db.masteryState).watch();
   }
+
+  /// One-shot read of every persisted mastery row. Used by the
+  /// scorer to recompute population mean across non-calibrating
+  /// heuristics.
+  Future<List<MasteryStateRow>> all() {
+    return _db.select(_db.masteryState).get();
+  }
 }
