@@ -10,6 +10,8 @@ import 'package:luna_traineer/features/full_game/band_rotator.dart';
 import 'package:luna_traineer/features/full_game/bloc/full_game_bloc.dart';
 import 'package:luna_traineer/features/full_game/replay_diff.dart';
 import 'package:luna_traineer/features/summary/bloc/summary_bloc.dart';
+import 'package:luna_traineer/puzzles/tango/domain/tango_mark.dart';
+import 'package:luna_traineer/puzzles/tango/domain/tango_position.dart';
 import 'package:luna_traineer/puzzles/tango/generator/difficulty_band.dart';
 
 const _parity = Heuristic('tango', 'ParityFill');
@@ -24,11 +26,17 @@ RecordedMove _move({
   bool wasCorrect = true,
   bool hintRequested = false,
   int hintStepReached = 0,
+  MoveMode mode = MoveMode.hunt,
+  int row = 0,
+  int col = 0,
+  TangoMark? mark,
+  DateTime? createdAt,
 }) {
   return RecordedMove(
     heuristic: heuristic,
-    row: 0,
-    col: 0,
+    row: row,
+    col: col,
+    mark: mark,
     latencyMs: latencyMs,
     contaminated: contaminated,
     idleSoftSignal: false,
@@ -37,8 +45,8 @@ RecordedMove _move({
     wasCorrect: wasCorrect,
     hintRequested: hintRequested,
     hintStepReached: hintStepReached,
-    mode: MoveMode.hunt,
-    createdAt: DateTime(2026, 5, 1),
+    mode: mode,
+    createdAt: createdAt ?? DateTime(2026, 5, 1),
   );
 }
 
@@ -179,6 +187,58 @@ void main() {
       expect(bloc.state.status, SummaryStatus.ready);
       expect(bloc.state.deltas, isEmpty);
       expect(bloc.state.drillCardsAdded, 0);
+    },
+  );
+
+  // ──────────────────────────────────────────────────────────────────
+  // R31 / R32: mode breakdown + bias incidents in SummaryState.
+  // ──────────────────────────────────────────────────────────────────
+  blocTest<SummaryBloc, SummaryState>(
+    'SummaryRequested computes mode breakdown (R31) for the session',
+    build: () => SummaryBloc(masteryScorer: scorer),
+    act: (bloc) => bloc.add(SummaryRequested(
+      recordedMoves: [
+        _move(heuristic: _parity, mode: MoveMode.propagation),
+        _move(heuristic: _parity, mode: MoveMode.propagation),
+        _move(heuristic: _trio, mode: MoveMode.hunt, latencyMs: 6000),
+      ],
+      replayDiff: null,
+    )),
+    skip: 1,
+    verify: (bloc) {
+      final state = bloc.state;
+      expect(state.modeBreakdown, isNotNull);
+      expect(state.modeBreakdown!.propagationCount, 2);
+      expect(state.modeBreakdown!.huntCount, 1);
+      expect(state.modeBreakdown!.slowestHuntHeuristic, _trio);
+      expect(state.biasIncidents, isEmpty,
+          reason: 'no initialPosition supplied → bias detector skipped');
+    },
+  );
+
+  blocTest<SummaryBloc, SummaryState>(
+    'SummaryRequested with initialPosition runs R32 bias detector — '
+    'no parity ever 1-empty → empty incidents',
+    build: () => SummaryBloc(masteryScorer: scorer),
+    act: (bloc) => bloc.add(SummaryRequested(
+      recordedMoves: [
+        _move(
+          heuristic: _trio,
+          mode: MoveMode.hunt,
+          row: 0,
+          col: 0,
+          mark: TangoMark.sun,
+          latencyMs: 6000,
+          createdAt: DateTime.utc(2026, 5, 1, 12, 0, 6),
+        ),
+      ],
+      replayDiff: null,
+      initialPosition: TangoPosition.empty(),
+    )),
+    skip: 1,
+    verify: (bloc) {
+      expect(bloc.state.biasIncidents, isEmpty);
+      expect(bloc.state.modeBreakdown!.huntCount, 1);
     },
   );
 

@@ -3,7 +3,9 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../engine/domain/heuristic.dart';
 import '../../../engine/mastery/mastery_scorer.dart';
+import '../../../puzzles/tango/domain/tango_position.dart';
 import '../../../puzzles/tango/generator/difficulty_band.dart';
+import '../../../puzzles/tango/solver/tango_solver.dart';
 import '../../full_game/band_rotator.dart';
 import '../../full_game/bloc/full_game_bloc.dart';
 import '../../full_game/replay_diff.dart';
@@ -27,13 +29,20 @@ class SummaryRequested extends SummaryEvent {
   const SummaryRequested({
     required this.recordedMoves,
     required this.replayDiff,
+    this.initialPosition,
   });
 
   final List<RecordedMove> recordedMoves;
   final ReplayDiffResult? replayDiff;
 
+  /// Стартовая позиция партии — нужна для R32 line_completion bias
+  /// детектора. Если `null`, bias-детектор пропускается (например,
+  /// в тестах SummaryBloc-а, где доска не реконструируется). Mode
+  /// breakdown (R31) считается без этого поля.
+  final TangoPosition? initialPosition;
+
   @override
-  List<Object?> get props => [recordedMoves, replayDiff];
+  List<Object?> get props => [recordedMoves, replayDiff, initialPosition];
 }
 
 /// «Следующая» (auto): rotator выбирает band, `userAdjusted=false`.
@@ -120,6 +129,8 @@ class SummaryState extends Equatable {
     this.status = SummaryStatus.idle,
     this.deltas = const [],
     this.replayDiff,
+    this.modeBreakdown,
+    this.biasIncidents = const [],
     this.errorMessage,
     this.nextGameRequest,
   });
@@ -127,6 +138,15 @@ class SummaryState extends Equatable {
   final SummaryStatus status;
   final List<HeuristicDelta> deltas;
   final ReplayDiffResult? replayDiff;
+
+  /// R31: propagation/hunt доли + p99 hunt latency per-heuristic.
+  /// `null` если SummaryRequested ещё не обработан или партия пустая.
+  final ModeBreakdown? modeBreakdown;
+
+  /// R32: список line_completion bias-инцидентов для секции
+  /// «Bias-флаги». Пустой = чистая партия без bias.
+  final List<BiasIncident> biasIncidents;
+
   final String? errorMessage;
 
   /// Set when the user picks one of the 4 post-session buttons.
@@ -158,6 +178,10 @@ class SummaryState extends Equatable {
         status,
         deltas,
         replayDiff?.count,
+        modeBreakdown?.totalCounted,
+        modeBreakdown?.propagationCount,
+        modeBreakdown?.huntCount,
+        biasIncidents.length,
         errorMessage,
         nextGameRequest,
       ];
@@ -166,6 +190,8 @@ class SummaryState extends Equatable {
     SummaryStatus? status,
     List<HeuristicDelta>? deltas,
     ReplayDiffResult? replayDiff,
+    ModeBreakdown? modeBreakdown,
+    List<BiasIncident>? biasIncidents,
     String? errorMessage,
     NextGameRequest? nextGameRequest,
   }) {
@@ -173,6 +199,8 @@ class SummaryState extends Equatable {
       status: status ?? this.status,
       deltas: deltas ?? this.deltas,
       replayDiff: replayDiff ?? this.replayDiff,
+      modeBreakdown: modeBreakdown ?? this.modeBreakdown,
+      biasIncidents: biasIncidents ?? this.biasIncidents,
       errorMessage: errorMessage ?? this.errorMessage,
       nextGameRequest: nextGameRequest ?? this.nextGameRequest,
     );
@@ -188,9 +216,11 @@ class SummaryBloc extends Bloc<SummaryEvent, SummaryState> {
     required MasteryScorer masteryScorer,
     BandRotator? bandRotator,
     DifficultyBand currentBand = DifficultyBand.medium,
+    TangoSolver solver = const TangoSolver(),
   })  : _scorer = masteryScorer,
         _rotator = bandRotator,
         _currentBand = currentBand,
+        _solver = solver,
         super(const SummaryState()) {
     on<SummaryRequested>(_onSummaryRequested);
     on<NextAuto>(_onNextAuto);
@@ -210,6 +240,10 @@ class SummaryBloc extends Bloc<SummaryEvent, SummaryState> {
   /// Band of the session that just ended. Set per-construction by the
   /// launcher (one SummaryBloc per session).
   final DifficultyBand _currentBand;
+
+  /// Solver — нужен для R32 line_completion bias детектора. Default
+  /// `const TangoSolver()` — stateless, можно держать singleton.
+  final TangoSolver _solver;
 
   Future<void> _onSummaryRequested(
     SummaryRequested event,
@@ -266,10 +300,26 @@ class SummaryBloc extends Bloc<SummaryEvent, SummaryState> {
         ));
       }
 
+      // R31 — propagation/hunt summary (доли + p99 hunt latency).
+      final modeBreakdown = computeModeBreakdown(event.recordedMoves);
+
+      // R32 — line_completion bias детектор. Требует initialPosition;
+      // если её нет (например, в legacy-тестах SummaryBloc), пропускаем
+      // детекцию — UX-секция «Bias-флаги» просто не отрендерится.
+      final List<BiasIncident> biasIncidents = event.initialPosition == null
+          ? const []
+          : detectLineCompletionBias(
+              initialPosition: event.initialPosition!,
+              moves: event.recordedMoves,
+              solver: _solver,
+            );
+
       emit(state.copyWith(
         status: SummaryStatus.ready,
         deltas: deltas,
         replayDiff: event.replayDiff,
+        modeBreakdown: modeBreakdown,
+        biasIncidents: biasIncidents,
       ));
     } catch (e) {
       emit(state.copyWith(
