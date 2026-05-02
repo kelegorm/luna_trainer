@@ -20,7 +20,10 @@ import '../../../puzzles/tango/generator/tango_puzzle.dart';
 import '../../../puzzles/tango/generator/target_mix.dart';
 import '../../../puzzles/tango/solver/tango_deduction.dart';
 import '../../../puzzles/tango/solver/tango_solver.dart';
+import '../recorded_move.dart';
 import '../replay_diff.dart';
+
+export '../recorded_move.dart' show RecordedMove;
 
 // ────────────────────────────────────────────────────────────────────
 // Events
@@ -193,57 +196,8 @@ class FullGameState extends Equatable {
       ];
 }
 
-/// Снапшот одного зафиксированного хода — нужен для post-game
-/// replay-diff-а и mastery-стриминга. Поля совпадают с
-/// `MoveEvent`-ами, что пишет Bloc, чтобы не перечитывать БД.
-class RecordedMove extends Equatable {
-  const RecordedMove({
-    required this.heuristic,
-    required this.row,
-    required this.col,
-    required this.latencyMs,
-    required this.contaminated,
-    required this.idleSoftSignal,
-    required this.motionSignal,
-    required this.lifecycleSignal,
-    required this.wasCorrect,
-    required this.hintRequested,
-    required this.hintStepReached,
-    required this.mode,
-    required this.createdAt,
-  });
-
-  final Heuristic heuristic;
-  final int row;
-  final int col;
-  final int latencyMs;
-  final bool contaminated;
-  final bool idleSoftSignal;
-  final bool motionSignal;
-  final bool lifecycleSignal;
-  final bool wasCorrect;
-  final bool hintRequested;
-  final int hintStepReached;
-  final MoveMode mode;
-  final DateTime createdAt;
-
-  @override
-  List<Object?> get props => [
-        heuristic,
-        row,
-        col,
-        latencyMs,
-        contaminated,
-        idleSoftSignal,
-        motionSignal,
-        lifecycleSignal,
-        wasCorrect,
-        hintRequested,
-        hintStepReached,
-        mode,
-        createdAt,
-      ];
-}
+// `RecordedMove` живёт в `lib/features/full_game/recorded_move.dart`
+// и re-export-ится этим файлом — старые импорт-сайты не ломаются.
 
 // ────────────────────────────────────────────────────────────────────
 // Bloc
@@ -444,6 +398,7 @@ class FullGameBloc extends Bloc<FullGameEvent, FullGameState> {
       heuristic: heuristic,
       row: event.row,
       col: event.col,
+      mark: event.mark,
       latencyMs: timing.latencyMs,
       contaminated: timing.contaminatedFlag,
       idleSoftSignal: timing.signals.idleSoftSignal,

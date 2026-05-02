@@ -63,6 +63,7 @@ class _FullGameView extends StatelessWidget {
                 recordedMoves: state.recordedMoves,
                 replayDiff: state.replayDiff,
                 currentBand: band,
+                initialPosition: state.puzzle?.initialPosition,
                 summaryBlocFactory: summaryBlocFactory,
               ),
             ),

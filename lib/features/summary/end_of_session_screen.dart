@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../puzzles/tango/domain/tango_position.dart';
 import '../../puzzles/tango/generator/difficulty_band.dart';
 import '../full_game/bloc/full_game_bloc.dart' show RecordedMove;
 import '../full_game/replay_diff.dart';
@@ -29,6 +30,7 @@ class EndOfSessionScreen extends StatelessWidget {
     required this.recordedMoves,
     required this.replayDiff,
     required this.currentBand,
+    this.initialPosition,
     this.summaryBlocFactory,
   });
 
@@ -39,6 +41,11 @@ class EndOfSessionScreen extends StatelessWidget {
   /// для disabled-состояний boundary-кнопок и `SummaryBloc`-у для
   /// расчёта next band.
   final DifficultyBand currentBand;
+
+  /// Стартовая позиция партии — нужна для R32 bias детектора в
+  /// SummaryBloc-е. `null` в легаси-тестах / smoke runs без DI;
+  /// тогда секция «Bias-флаги» просто не рендерится.
+  final TangoPosition? initialPosition;
 
   /// Optional override for tests / DI. В runtime приложение
   /// инжектит SummaryBloc через repository-стек.
@@ -62,6 +69,7 @@ class EndOfSessionScreen extends StatelessWidget {
         bloc.add(SummaryRequested(
           recordedMoves: recordedMoves,
           replayDiff: replayDiff,
+          initialPosition: initialPosition,
         ));
         return bloc;
       },
@@ -183,6 +191,14 @@ class _SummaryBody extends StatelessWidget {
         children: [
           _DrillCardsBanner(count: state.drillCardsAdded),
           const SizedBox(height: 16),
+          if (state.modeBreakdown != null && !state.modeBreakdown!.isEmpty) ...[
+            _ModeBreakdownSection(breakdown: state.modeBreakdown!),
+            const SizedBox(height: 16),
+          ],
+          if (state.biasIncidents.isNotEmpty) ...[
+            _BiasFlagsSection(incidents: state.biasIncidents),
+            const SizedBox(height: 16),
+          ],
           if (state.deltas.isEmpty)
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 16),
@@ -274,6 +290,80 @@ class _DeltaTile extends StatelessWidget {
         '${delta.eventCount} moves · '
         'median ${delta.medianLatencyMs ?? 0} ms · '
         'errors ${(delta.errorRate * 100).toStringAsFixed(0)}%',
+      ),
+    );
+  }
+}
+
+/// R31 — секция «Propagation/Hunt» с долями и slowest-hunt-паттерном.
+class _ModeBreakdownSection extends StatelessWidget {
+  const _ModeBreakdownSection({required this.breakdown});
+  final ModeBreakdown breakdown;
+
+  @override
+  Widget build(BuildContext context) {
+    final propPct = (breakdown.propagationFraction * 100).round();
+    final huntPct = (breakdown.huntFraction * 100).round();
+    final slowest = breakdown.slowestHuntHeuristic;
+    final slowestP99 = slowest == null
+        ? null
+        : breakdown.p99HuntLatencyByHeuristic[slowest];
+    return Card(
+      key: const ValueKey('summary-mode-breakdown'),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Propagation / Hunt',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 8),
+            Text('Propagation $propPct% · Hunt $huntPct%'),
+            if (slowest != null && slowestP99 != null) ...[
+              const SizedBox(height: 4),
+              Text(
+                'Slowest hunt: ${slowest.tagId} (p99 $slowestP99 ms)',
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// R32 — секция «Bias-флаги»: список line_completion инцидентов.
+class _BiasFlagsSection extends StatelessWidget {
+  const _BiasFlagsSection({required this.incidents});
+  final List<BiasIncident> incidents;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      key: const ValueKey('summary-bias-flags'),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Bias-флаги',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 8),
+            for (final inc in incidents)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 2),
+                child: Text(
+                  'Move #${inc.atMoveIndex + 1}: ${inc.reason} '
+                  '(${(inc.elapsedMs / 1000).toStringAsFixed(1)} s)'
+                  ' — (${inc.missedRow},${inc.missedCol})',
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
