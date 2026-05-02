@@ -3,6 +3,8 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../engine/domain/heuristic.dart';
 import '../../../engine/mastery/mastery_scorer.dart';
+import '../../../puzzles/tango/generator/difficulty_band.dart';
+import '../../full_game/band_rotator.dart';
 import '../../full_game/bloc/full_game_bloc.dart';
 import '../../full_game/replay_diff.dart';
 
@@ -32,6 +34,27 @@ class SummaryRequested extends SummaryEvent {
 
   @override
   List<Object?> get props => [recordedMoves, replayDiff];
+}
+
+/// «Следующая» (auto): rotator выбирает band, `userAdjusted=false`.
+class NextAuto extends SummaryEvent {
+  const NextAuto();
+}
+
+/// «Ещё такую же»: тот же band, `userAdjusted=true`. Rotator state
+/// **не** сдвигается — следующий auto продолжается с того же места.
+class NextSame extends SummaryEvent {
+  const NextSame();
+}
+
+/// «Сложнее ▲»: `currentBand.bumpUp()` (clamp to hard), `userAdjusted=true`.
+class NextHarder extends SummaryEvent {
+  const NextHarder();
+}
+
+/// «Легче ▼»: `currentBand.bumpDown()` (clamp to easy), `userAdjusted=true`.
+class NextEasier extends SummaryEvent {
+  const NextEasier();
 }
 
 // ────────────────────────────────────────────────────────────────────
@@ -75,18 +98,41 @@ class HeuristicDelta extends Equatable {
 /// «замедлился», `flat` = «без изменений / недостаточно данных».
 enum SummaryDirection { improved, regressed, flat }
 
+/// Запрос на запуск следующей партии — что выбрал пользователь
+/// четырьмя post-session кнопками (R37). Surfaces в `SummaryState`,
+/// чтобы UI мог дернуть `Navigator.pop(result)` и launcher перезапустил
+/// `FullGameScreen` с новым band/userAdjusted.
+class NextGameRequest extends Equatable {
+  const NextGameRequest({
+    required this.band,
+    required this.userAdjusted,
+  });
+
+  final DifficultyBand band;
+  final bool userAdjusted;
+
+  @override
+  List<Object?> get props => [band, userAdjusted];
+}
+
 class SummaryState extends Equatable {
   const SummaryState({
     this.status = SummaryStatus.idle,
     this.deltas = const [],
     this.replayDiff,
     this.errorMessage,
+    this.nextGameRequest,
   });
 
   final SummaryStatus status;
   final List<HeuristicDelta> deltas;
   final ReplayDiffResult? replayDiff;
   final String? errorMessage;
+
+  /// Set when the user picks one of the 4 post-session buttons.
+  /// EndOfSessionScreen listens for the null→non-null transition and
+  /// pops with this value so the launcher can restart the next game.
+  final NextGameRequest? nextGameRequest;
 
   /// Удобный getter для UI: топ-улучшение по скорости.
   HeuristicDelta? get topImprovement {
@@ -108,19 +154,27 @@ class SummaryState extends Equatable {
   int get drillCardsAdded => replayDiff?.count ?? 0;
 
   @override
-  List<Object?> get props => [status, deltas, replayDiff?.count, errorMessage];
+  List<Object?> get props => [
+        status,
+        deltas,
+        replayDiff?.count,
+        errorMessage,
+        nextGameRequest,
+      ];
 
   SummaryState copyWith({
     SummaryStatus? status,
     List<HeuristicDelta>? deltas,
     ReplayDiffResult? replayDiff,
     String? errorMessage,
+    NextGameRequest? nextGameRequest,
   }) {
     return SummaryState(
       status: status ?? this.status,
       deltas: deltas ?? this.deltas,
       replayDiff: replayDiff ?? this.replayDiff,
       errorMessage: errorMessage ?? this.errorMessage,
+      nextGameRequest: nextGameRequest ?? this.nextGameRequest,
     );
   }
 }
@@ -132,12 +186,30 @@ class SummaryState extends Equatable {
 class SummaryBloc extends Bloc<SummaryEvent, SummaryState> {
   SummaryBloc({
     required MasteryScorer masteryScorer,
+    BandRotator? bandRotator,
+    DifficultyBand currentBand = DifficultyBand.medium,
   })  : _scorer = masteryScorer,
+        _rotator = bandRotator,
+        _currentBand = currentBand,
         super(const SummaryState()) {
     on<SummaryRequested>(_onSummaryRequested);
+    on<NextAuto>(_onNextAuto);
+    on<NextSame>(_onNextSame);
+    on<NextHarder>(_onNextHarder);
+    on<NextEasier>(_onNextEasier);
   }
 
   final MasteryScorer _scorer;
+
+  /// Rotator drives auto «Следующая» band selection. Optional so legacy
+  /// callers (and tests that don't exercise the post-session buttons)
+  /// can keep the old constructor shape; if `null`, [NextAuto] falls
+  /// back to keeping `_currentBand` (no rotation).
+  final BandRotator? _rotator;
+
+  /// Band of the session that just ended. Set per-construction by the
+  /// launcher (one SummaryBloc per session).
+  final DifficultyBand _currentBand;
 
   Future<void> _onSummaryRequested(
     SummaryRequested event,
@@ -205,5 +277,44 @@ class SummaryBloc extends Bloc<SummaryEvent, SummaryState> {
         errorMessage: e.toString(),
       ));
     }
+  }
+
+  Future<void> _onNextAuto(NextAuto event, Emitter<SummaryState> emit) async {
+    final rotator = _rotator;
+    final band = rotator == null
+        ? _currentBand
+        : await rotator.next(_currentBand);
+    emit(state.copyWith(
+      nextGameRequest: NextGameRequest(band: band, userAdjusted: false),
+    ));
+  }
+
+  void _onNextSame(NextSame event, Emitter<SummaryState> emit) {
+    // Rotator state не сдвигается: следующий auto продолжается с
+    // того же step-а, что был бы выбран без «Ещё такую же».
+    emit(state.copyWith(
+      nextGameRequest: NextGameRequest(
+        band: _currentBand,
+        userAdjusted: true,
+      ),
+    ));
+  }
+
+  void _onNextHarder(NextHarder event, Emitter<SummaryState> emit) {
+    emit(state.copyWith(
+      nextGameRequest: NextGameRequest(
+        band: _currentBand.bumpUp(),
+        userAdjusted: true,
+      ),
+    ));
+  }
+
+  void _onNextEasier(NextEasier event, Emitter<SummaryState> emit) {
+    emit(state.copyWith(
+      nextGameRequest: NextGameRequest(
+        band: _currentBand.bumpDown(),
+        userAdjusted: true,
+      ),
+    ));
   }
 }

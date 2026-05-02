@@ -98,6 +98,7 @@ class FullGameState extends Equatable {
     this.position,
     this.puzzle,
     this.sessionId,
+    this.currentBand,
     this.hintStep = 0,
     this.hintOverlayOpen = false,
     this.suggestedDeduction,
@@ -116,6 +117,11 @@ class FullGameState extends Equatable {
 
   /// id сессии, открытой в `sessions`-таблице.
   final int? sessionId;
+
+  /// Difficulty band, под которым сгенерирована текущая партия. `null`
+  /// до старта. Surfaced в state, чтобы end-of-session UI мог передать
+  /// его в `PostSessionActions` без нового getter-а на bloc.
+  final DifficultyBand? currentBand;
 
   /// Шаг лесенки (0 = не открыта, 1..4 = step из R13).
   final int hintStep;
@@ -145,6 +151,7 @@ class FullGameState extends Equatable {
     TangoPosition? position,
     TangoPuzzle? puzzle,
     int? sessionId,
+    DifficultyBand? currentBand,
     int? hintStep,
     bool? hintOverlayOpen,
     TangoDeduction? suggestedDeduction,
@@ -158,6 +165,7 @@ class FullGameState extends Equatable {
       position: position ?? this.position,
       puzzle: puzzle ?? this.puzzle,
       sessionId: sessionId ?? this.sessionId,
+      currentBand: currentBand ?? this.currentBand,
       hintStep: hintStep ?? this.hintStep,
       hintOverlayOpen: hintOverlayOpen ?? this.hintOverlayOpen,
       suggestedDeduction: clearSuggestion
@@ -175,6 +183,7 @@ class FullGameState extends Equatable {
         position,
         puzzle?.seed,
         sessionId,
+        currentBand,
         hintStep,
         hintOverlayOpen,
         suggestedDeduction,
@@ -347,6 +356,7 @@ class FullGameBloc extends Bloc<FullGameEvent, FullGameState> {
         position: puzzle.initialPosition,
         puzzle: puzzle,
         sessionId: sessionId,
+        currentBand: _band,
         recordedMoves: const [],
       ));
     } catch (e) {

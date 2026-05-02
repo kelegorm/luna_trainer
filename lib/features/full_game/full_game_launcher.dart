@@ -15,7 +15,9 @@ import '../../engine/telemetry/contamination_detector.dart';
 import '../../engine/telemetry/lifecycle_observer.dart';
 import '../../engine/telemetry/motion_detector.dart';
 import '../../engine/telemetry/move_timer_service.dart';
+import '../../puzzles/tango/generator/difficulty_band.dart';
 import '../summary/bloc/summary_bloc.dart';
+import 'band_rotator.dart';
 import 'bloc/full_game_bloc.dart';
 import 'full_game_screen.dart';
 import 'replay_diff.dart';
@@ -29,19 +31,49 @@ LunaDatabase _db() => _runtimeDb ??= LunaDatabase();
 /// Launches the full-game screen with a fully-wired Bloc graph
 /// (sessions repo, mastery scorer, replay-diff, FSRS scheduler).
 ///
+/// Loops while the user keeps tapping a post-session button: each
+/// `NextGameRequest` returned from `EndOfSessionScreen` reseeds
+/// `band`/`userAdjusted` for the next iteration. Returning to the
+/// home screen happens when the user backs out (route returns `null`).
+///
+/// `BandRotator` lives across iterations — its round-robin counter
+/// must persist so two consecutive «Следующая» taps don't repeatedly
+/// hit the same step. After the first `next()`, the rotator hydrates
+/// from `sessionsRepository.recentBands`, so even an Android process-
+/// kill mid-stack doesn't reset the counter to 0.
+///
 /// Plain `Navigator.push` — no router yet (deferred per plan U1).
 Future<void> launchFullGame(BuildContext context) async {
-  await Navigator.of(context).push(
-    MaterialPageRoute<void>(
-      builder: (_) => const FullGameScreen(
-        createBloc: _buildBloc,
-        summaryBlocFactory: buildSummaryBloc,
+  final db = _db();
+  final sessionsRepo = SessionsRepository(db);
+  final rotator = BandRotator(loadRecentBands: sessionsRepo.recentBands);
+
+  var band = DifficultyBand.medium;
+  var userAdjusted = false;
+  while (true) {
+    if (!context.mounted) return;
+    final result = await Navigator.of(context).push<NextGameRequest>(
+      MaterialPageRoute<NextGameRequest>(
+        builder: (_) => FullGameScreen(
+          createBloc: (_) => _buildBloc(
+            band: band,
+            userAdjusted: userAdjusted,
+          ),
+          summaryBlocFactory: (_, currentBand) =>
+              buildSummaryBloc(currentBand: currentBand, rotator: rotator),
+        ),
       ),
-    ),
-  );
+    );
+    if (result == null) return;
+    band = result.band;
+    userAdjusted = result.userAdjusted;
+  }
 }
 
-FullGameBloc _buildBloc(BuildContext _) {
+FullGameBloc _buildBloc({
+  DifficultyBand band = DifficultyBand.medium,
+  bool userAdjusted = false,
+}) {
   final db = _db();
   final sessionsRepo = SessionsRepository(db);
   final movesRepo = MoveEventsRepository(db);
@@ -85,6 +117,8 @@ FullGameBloc _buildBloc(BuildContext _) {
     moveTimer: moveTimer,
     replayDiffRunner: runReplayDiff,
     masteryUpdater: updateMastery,
+    band: band,
+    userAdjusted: userAdjusted,
   );
 }
 
@@ -103,9 +137,13 @@ Stream<MotionSample> _safeMotionStream() {
   }
 }
 
-/// Build a [SummaryBloc] hooked into the runtime [MasteryScorer].
-/// Used by the runtime end-of-session route; tests inject directly.
-SummaryBloc buildSummaryBloc(BuildContext _) {
+/// Build a [SummaryBloc] hooked into the runtime [MasteryScorer] and
+/// the per-launch [BandRotator]. Used by the runtime end-of-session
+/// route; tests inject directly.
+SummaryBloc buildSummaryBloc({
+  required DifficultyBand currentBand,
+  required BandRotator rotator,
+}) {
   final db = _db();
   final masteryRepo = MasteryRepository(db);
   final movesRepo = MoveEventsRepository(db);
@@ -114,6 +152,8 @@ SummaryBloc buildSummaryBloc(BuildContext _) {
       masteryRepository: masteryRepo,
       moveEventsRepository: movesRepo,
     ),
+    bandRotator: rotator,
+    currentBand: currentBand,
   );
 }
 

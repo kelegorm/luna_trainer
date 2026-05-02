@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../puzzles/tango/generator/difficulty_band.dart';
 import '../../puzzles/tango/widgets/tango_board.dart';
 import '../summary/bloc/summary_bloc.dart';
 import '../summary/end_of_session_screen.dart';
@@ -29,7 +30,7 @@ class FullGameScreen extends StatelessWidget {
 
   /// Фабрика SummaryBloc-а для post-game route. Передаётся как-есть
   /// в [EndOfSessionScreen]. В тестах можно опустить.
-  final SummaryBloc Function(BuildContext)? summaryBlocFactory;
+  final SummaryBlocFactory? summaryBlocFactory;
 
   @override
   Widget build(BuildContext context) {
@@ -43,7 +44,7 @@ class FullGameScreen extends StatelessWidget {
 class _FullGameView extends StatelessWidget {
   const _FullGameView({this.summaryBlocFactory});
 
-  final SummaryBloc Function(BuildContext)? summaryBlocFactory;
+  final SummaryBlocFactory? summaryBlocFactory;
 
   @override
   Widget build(BuildContext context) {
@@ -53,11 +54,15 @@ class _FullGameView extends StatelessWidget {
         if (state.status == FullGameStatus.completed) {
           // Push end-of-session screen on top. Bloc остаётся в state
           // `completed`; replay-diff уже сохранён в outcome_json.
+          // Pass the band that just played — `EndOfSessionScreen`
+          // pops with a `NextGameRequest` derived from it (R37/R38).
+          final band = state.currentBand ?? DifficultyBand.medium;
           Navigator.of(context).pushReplacement(
-            MaterialPageRoute<void>(
+            MaterialPageRoute<NextGameRequest>(
               builder: (_) => EndOfSessionScreen(
                 recordedMoves: state.recordedMoves,
                 replayDiff: state.replayDiff,
+                currentBand: band,
                 summaryBlocFactory: summaryBlocFactory,
               ),
             ),

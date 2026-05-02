@@ -1,31 +1,48 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../puzzles/tango/generator/difficulty_band.dart';
 import '../full_game/bloc/full_game_bloc.dart' show RecordedMove;
 import '../full_game/replay_diff.dart';
 import 'bloc/summary_bloc.dart';
+import 'widgets/post_session_actions.dart';
+
+/// Factory signature: takes `currentBand` so the SummaryBloc handlers
+/// can compute the next band/userAdjusted off it.
+typedef SummaryBlocFactory = SummaryBloc Function(
+  BuildContext context,
+  DifficultyBand currentBand,
+);
 
 /// Экран «end-of-session» (R23): per-heuristic дельты («прокачал /
-/// замедлился»), число drill-cards, заведённых replay-diff-ом, и одна
-/// кнопка «Next game». Базовая U11 — кнопок 1 (post-session 4 buttons
-/// — амендмент R37/R38 для отдельного юнита).
+/// замедлился»), число drill-cards, заведённых replay-diff-ом, и
+/// 4 post-session кнопки (R37) под `PostSessionActions`. На любой из
+/// 4-х кнопок Bloc emit-ит `nextGameRequest` → экран pop-ит этот
+/// `NextGameRequest`, launcher принимает его и поднимает следующую
+/// партию с новым band/userAdjusted.
 ///
 /// «Подробнее» (AE7) ведёт на MasteryScreen, который пока не
-/// реализован (U13). Поэтому кнопка показывает SnackBar-stub.
+/// реализован (U13) — кнопка показывает SnackBar-stub.
 class EndOfSessionScreen extends StatelessWidget {
   const EndOfSessionScreen({
     super.key,
     required this.recordedMoves,
     required this.replayDiff,
+    required this.currentBand,
     this.summaryBlocFactory,
   });
 
   final List<RecordedMove> recordedMoves;
   final ReplayDiffResult? replayDiff;
 
+  /// Band только что сыгранной партии — нужен `PostSessionActions`-у
+  /// для disabled-состояний boundary-кнопок и `SummaryBloc`-у для
+  /// расчёта next band.
+  final DifficultyBand currentBand;
+
   /// Optional override for tests / DI. В runtime приложение
   /// инжектит SummaryBloc через repository-стек.
-  final SummaryBloc Function(BuildContext)? summaryBlocFactory;
+  final SummaryBlocFactory? summaryBlocFactory;
 
   @override
   Widget build(BuildContext context) {
@@ -36,33 +53,37 @@ class EndOfSessionScreen extends StatelessWidget {
       return _StaticEndOfSession(
         recordedMoves: recordedMoves,
         replayDiff: replayDiff,
+        currentBand: currentBand,
       );
     }
     return BlocProvider<SummaryBloc>(
       create: (ctx) {
-        final bloc = factory(ctx);
+        final bloc = factory(ctx, currentBand);
         bloc.add(SummaryRequested(
           recordedMoves: recordedMoves,
           replayDiff: replayDiff,
         ));
         return bloc;
       },
-      child: const _SummaryView(),
+      child: _SummaryView(currentBand: currentBand),
     );
   }
 }
 
 /// Light-weight fallback used when no SummaryBloc factory was passed.
-/// Shows just the drill-cards banner + a Next-game button — no
-/// per-heuristic deltas (those need MasteryScorer).
+/// Shows the drill-cards banner + the same `PostSessionActions` strip,
+/// but pops with synthesised `NextGameRequest`s instead of going through
+/// `SummaryBloc`. Used by tests / smoke runs without a MasteryScorer.
 class _StaticEndOfSession extends StatelessWidget {
   const _StaticEndOfSession({
     required this.recordedMoves,
     required this.replayDiff,
+    required this.currentBand,
   });
 
   final List<RecordedMove> recordedMoves;
   final ReplayDiffResult? replayDiff;
+  final DifficultyBand currentBand;
 
   @override
   Widget build(BuildContext context) {
@@ -76,10 +97,28 @@ class _StaticEndOfSession extends StatelessWidget {
           children: [
             _DrillCardsBanner(count: drillCount),
             const Spacer(),
-            FilledButton(
-              key: const ValueKey('summary-next-game'),
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Next game'),
+            PostSessionActions(
+              currentBand: currentBand,
+              // No rotator available — auto reuses currentBand. Fine
+              // for tests / smoke; real flow goes through SummaryBloc.
+              onAuto: () => Navigator.of(context).pop(
+                NextGameRequest(band: currentBand, userAdjusted: false),
+              ),
+              onSame: () => Navigator.of(context).pop(
+                NextGameRequest(band: currentBand, userAdjusted: true),
+              ),
+              onHarder: () => Navigator.of(context).pop(
+                NextGameRequest(
+                  band: currentBand.bumpUp(),
+                  userAdjusted: true,
+                ),
+              ),
+              onEasier: () => Navigator.of(context).pop(
+                NextGameRequest(
+                  band: currentBand.bumpDown(),
+                  userAdjusted: true,
+                ),
+              ),
             ),
           ],
         ),
@@ -89,43 +128,54 @@ class _StaticEndOfSession extends StatelessWidget {
 }
 
 class _SummaryView extends StatelessWidget {
-  const _SummaryView();
+  const _SummaryView({required this.currentBand});
+
+  final DifficultyBand currentBand;
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Game complete')),
-      body: BlocBuilder<SummaryBloc, SummaryState>(
-        builder: (context, state) {
-          switch (state.status) {
-            case SummaryStatus.idle:
-            case SummaryStatus.loading:
-              return const Center(child: CircularProgressIndicator());
-            case SummaryStatus.failed:
-              return Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Text(
-                    'Could not build summary: ${state.errorMessage ?? 'unknown'}',
-                    textAlign: TextAlign.center,
+    return BlocListener<SummaryBloc, SummaryState>(
+      listenWhen: (a, b) =>
+          a.nextGameRequest == null && b.nextGameRequest != null,
+      listener: (context, state) {
+        Navigator.of(context).pop(state.nextGameRequest);
+      },
+      child: Scaffold(
+        appBar: AppBar(title: const Text('Game complete')),
+        body: BlocBuilder<SummaryBloc, SummaryState>(
+          builder: (context, state) {
+            switch (state.status) {
+              case SummaryStatus.idle:
+              case SummaryStatus.loading:
+                return const Center(child: CircularProgressIndicator());
+              case SummaryStatus.failed:
+                return Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Text(
+                      'Could not build summary: ${state.errorMessage ?? 'unknown'}',
+                      textAlign: TextAlign.center,
+                    ),
                   ),
-                ),
-              );
-            case SummaryStatus.ready:
-              return _SummaryBody(state: state);
-          }
-        },
+                );
+              case SummaryStatus.ready:
+                return _SummaryBody(state: state, currentBand: currentBand);
+            }
+          },
+        ),
       ),
     );
   }
 }
 
 class _SummaryBody extends StatelessWidget {
-  const _SummaryBody({required this.state});
+  const _SummaryBody({required this.state, required this.currentBand});
   final SummaryState state;
+  final DifficultyBand currentBand;
 
   @override
   Widget build(BuildContext context) {
+    final bloc = context.read<SummaryBloc>();
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -150,29 +200,28 @@ class _SummaryBody extends StatelessWidget {
               ),
             ),
           const SizedBox(height: 16),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              TextButton(
-                key: const ValueKey('summary-details'),
-                onPressed: () {
-                  // U13 — MasteryScreen ещё не реализован. Заглушка.
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text(
-                        'Mastery screen — coming in U13',
-                      ),
-                    ),
-                  );
-                },
-                child: const Text('Details'),
-              ),
-              FilledButton(
-                key: const ValueKey('summary-next-game'),
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Next game'),
-              ),
-            ],
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton(
+              key: const ValueKey('summary-details'),
+              onPressed: () {
+                // U13 — MasteryScreen ещё не реализован. Заглушка.
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Mastery screen — coming in U13'),
+                  ),
+                );
+              },
+              child: const Text('Details'),
+            ),
+          ),
+          const SizedBox(height: 8),
+          PostSessionActions(
+            currentBand: currentBand,
+            onAuto: () => bloc.add(const NextAuto()),
+            onSame: () => bloc.add(const NextSame()),
+            onHarder: () => bloc.add(const NextHarder()),
+            onEasier: () => bloc.add(const NextEasier()),
           ),
         ],
       ),
