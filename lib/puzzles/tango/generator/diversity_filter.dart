@@ -107,11 +107,24 @@ List<_Edge> _enumerateAdjacencies(List<CellAddress> active) {
 /// Pure in-memory; persistence ships in a later phase. The caller owns
 /// the instance and threads it across [TangoLevelGenerator.generate]
 /// calls when batch-generating.
+///
+/// **R39 / U6.1 extension.** The filter accepts an optional
+/// `recentSignatures` list (last 10 signatures from the persistent log,
+/// joined from `sessions JOIN preview-data`) and an optional
+/// `previousBandSignature` (the signature of the immediately-previous
+/// session of the same band). Exact-match against either causes a
+/// force-reject. The static helper [verifyVarietyHorizon] returns true
+/// iff a 10-signature history contains ≥6 distinct entries — used by
+/// callers that want to assert R39's "≥6 different forms in 10
+/// consecutive games" guarantee.
 class DiversityFilter {
   DiversityFilter({
     this.minDistance = 0.30,
     this.bufferSize = 50,
-  });
+    List<String> recentSignatures = const [],
+    String? previousBandSignature,
+  })  : _recentSignatures = List.unmodifiable(recentSignatures),
+        _previousBandSignature = previousBandSignature;
 
   /// Hamming distance threshold. Below this → reject.
   final double minDistance;
@@ -119,11 +132,29 @@ class DiversityFilter {
   /// Rolling buffer cap. Older signatures are forgotten.
   final int bufferSize;
 
+  /// Stable signatures pulled from the last-10 persisted sessions for
+  /// the active user (R39). Exact-match against any of these forces a
+  /// reject — the in-memory `_recent` buffer covers session-local
+  /// dedupe; this list covers cross-session dedupe.
+  final List<String> _recentSignatures;
+
+  /// Signature of the immediately-previous session of the same
+  /// difficulty band (R39 base case — "two consecutive games of the
+  /// same band must look different").
+  final String? _previousBandSignature;
+
   final Queue<_PuzzleSignature> _recent = Queue<_PuzzleSignature>();
 
-  /// `true` iff [candidate] is far enough from every recent signature.
+  /// `true` iff [candidate] is far enough from every recent signature
+  /// (Hamming-metric) **and** does not exactly collide with any of the
+  /// persisted signatures supplied at construction time.
   bool accepts(TangoPuzzle candidate) {
     final sig = _PuzzleSignature.of(candidate);
+    final stable = stableSignatureOf(candidate);
+    if (_previousBandSignature != null && stable == _previousBandSignature) {
+      return false;
+    }
+    if (_recentSignatures.contains(stable)) return false;
     for (final r in _recent) {
       if (sig.distance(r) < minDistance) return false;
     }
@@ -142,4 +173,45 @@ class DiversityFilter {
 
   /// Visible-for-testing snapshot of the buffer length.
   int get bufferLength => _recent.length;
+
+  /// Stable string signature of [puzzle] suitable for cross-session
+  /// persistence. Hash of {seed-mark positions, equals-edge positions,
+  /// opposite-edge positions} — exact-match metric (Deferred to
+  /// Implementation: switching to a perceptual hash later is allowed).
+  static String stableSignatureOf(TangoPuzzle puzzle) {
+    final sig = _PuzzleSignature.of(puzzle);
+    // Pack the bool-vector into a hex digest. Length is bounded by the
+    // active-cell count + adjacency count, never huge — direct base16
+    // encoding is fine.
+    final buf = StringBuffer();
+    var byte = 0;
+    var bitsInByte = 0;
+    for (final b in sig.bits) {
+      byte = (byte << 1) | (b ? 1 : 0);
+      bitsInByte++;
+      if (bitsInByte == 8) {
+        buf.write(byte.toRadixString(16).padLeft(2, '0'));
+        byte = 0;
+        bitsInByte = 0;
+      }
+    }
+    if (bitsInByte > 0) {
+      byte <<= (8 - bitsInByte);
+      buf.write(byte.toRadixString(16).padLeft(2, '0'));
+    }
+    return buf.toString();
+  }
+
+  /// Variety-horizon check (R39): given the last 10 signatures (oldest
+  /// → newest), returns `true` iff there are ≥6 distinct entries.
+  ///
+  /// Lists shorter than 10 are treated as-is — `verifyVarietyHorizon`
+  /// on a 5-entry list with all-distinct entries returns `true`. The
+  /// `>=6` floor only kicks in once a full horizon is available.
+  static bool verifyVarietyHorizon(List<String> last10Signatures) {
+    if (last10Signatures.length < 10) {
+      return last10Signatures.toSet().length == last10Signatures.length;
+    }
+    return last10Signatures.toSet().length >= 6;
+  }
 }
