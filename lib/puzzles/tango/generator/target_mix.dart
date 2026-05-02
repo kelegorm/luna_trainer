@@ -9,6 +9,8 @@ const Set<String> _kAllowedTags = {
   'ParityFill',
   'SignPropagation',
   'AdvancedMidLineInference',
+  'AdvancedMidLineInference/edge_1_5',
+  'AdvancedMidLineInference/edge_2_6',
   'ChainExtension',
 };
 
