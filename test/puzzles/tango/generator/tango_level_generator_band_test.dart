@@ -68,7 +68,7 @@ void main() {
           reason: 'no band=2 GeneratorSuccess across 5 seeds');
     });
 
-    test('band=1: density is dense (≥ 0.45) and avoids advanced techniques',
+    test('band=1: denser than band=3 floor and avoids advanced techniques',
         () {
       const gen = TangoLevelGenerator();
       for (var seed = 0; seed < 5; seed++) {
@@ -79,8 +79,9 @@ void main() {
           band: DifficultyBand.easy,
         );
         if (result is GeneratorSuccess) {
-          expect(_activeDensity(result.puzzle), greaterThanOrEqualTo(0.45),
-              reason: 'band=1 puzzle must be dense; seed=$seed');
+          expect(_activeDensity(result.puzzle), greaterThanOrEqualTo(0.25),
+              reason: 'band=1 puzzle must be denser than the band=3 floor; '
+                  'seed=$seed');
           // Easy band's required set explicitly excludes
           // AdvancedMidLineInference / ChainExtension. The trace MAY
           // still contain them as a side effect (the solver picks

@@ -403,6 +403,22 @@ class FullGameBloc extends Bloc<FullGameEvent, FullGameState> {
       userAdjusted: false,
     );
 
+    // Stream mastery per-move (was: batched at GameCompleted). Batching
+    // 28 mastery updates after the final tap added ~half a second of
+    // perceived UI lag before the end-of-session screen appeared. With
+    // streaming each individual move pays a few ms during normal play
+    // when the user is looking at the board, not waiting for a route
+    // transition. MasteryScorer.updateOnEvent itself drops contaminated
+    // events, so the filter does not need to live here.
+    await _masteryUpdater(MasteryEvent(
+      heuristic: heuristic,
+      latencyMs: timing.latencyMs,
+      wasCorrect: wasCorrect,
+      hintRequested: hintRequested,
+      contaminated: timing.contaminatedFlag,
+      hintStepReached: hintStepReached,
+    ));
+
     final recorded = RecordedMove(
       heuristic: heuristic,
       row: event.row,
@@ -504,17 +520,8 @@ class FullGameBloc extends Bloc<FullGameEvent, FullGameState> {
 
     final diff = await _replayDiff(replayMoves);
 
-    // Update mastery for all non-contaminated moves (план R8/R10).
-    for (final m in state.recordedMoves) {
-      await _masteryUpdater(MasteryEvent(
-        heuristic: m.heuristic,
-        latencyMs: m.latencyMs,
-        wasCorrect: m.wasCorrect,
-        hintRequested: m.hintRequested,
-        contaminated: m.contaminated,
-        hintStepReached: m.hintStepReached,
-      ));
-    }
+    // Mastery updates are now streamed per-move in [_onMoveCommitted];
+    // see the comment there for the rationale.
 
     if (sessionId != null) {
       await _sessions.markEnded(

@@ -3,8 +3,13 @@ import 'package:flutter/material.dart';
 import '../domain/tango_mark.dart';
 
 /// A single Tango cell. Renders the current [mark] (or empty) and
-/// fires [onTap] on tap. Mark cycling is the parent's responsibility
-/// (see `nextTangoMark`).
+/// fires [onTap] on **tap-down** (not tap-up). Mark cycling is the
+/// parent's responsibility (see `nextTangoMark`).
+///
+/// Tap-down is preferred over `InkWell.onTap` because the latter only
+/// fires on pointer release — for a fast game like Tango that ~150–250 ms
+/// of release-latency reads as UI lag. Player feedback was that the
+/// board "лагает" before this change.
 ///
 /// Carries a Semantics label of the form
 /// `"row R column C, sun|moon|empty"` so screen readers can describe
@@ -31,8 +36,10 @@ class TangoCell extends StatelessWidget {
       label: 'row ${row + 1} column ${col + 1}, ${_markLabel(mark)}',
       button: true,
       container: true,
-      child: InkWell(
-        onTap: onTap,
+      onTap: onTap,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTapDown: (_) => onTap(),
         excludeFromSemantics: true,
         child: DecoratedBox(
           decoration: BoxDecoration(

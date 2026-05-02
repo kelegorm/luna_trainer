@@ -42,10 +42,11 @@ void main() {
   group('BandToParamsMapper', () {
     const mapper = BandToParamsMapper();
 
-    test('band=1 (easy): high density, no advanced techniques required', () {
+    test('band=1 (easy): elementary techniques only, density above medium', () {
       final p = mapper.mapToParams(DifficultyBand.easy);
-      expect(p.density, greaterThanOrEqualTo(0.45));
-      expect(p.signDensity, greaterThanOrEqualTo(0.25));
+      expect(p.density, greaterThanOrEqualTo(0.25));
+      expect(p.density, lessThanOrEqualTo(0.40));
+      expect(p.signDensity, greaterThanOrEqualTo(0.15));
       expect(p.hardAcceptsAlternatives, isFalse);
       expect(p.requiredTechniques.contains(_pairCompletion), isTrue);
       expect(p.requiredTechniques.contains(_trioAvoidance), isTrue);
@@ -55,8 +56,8 @@ void main() {
 
     test('band=2 (medium): SignPropagation in the required set', () {
       final p = mapper.mapToParams(DifficultyBand.medium);
-      expect(p.density, lessThan(0.55));
-      expect(p.density, greaterThanOrEqualTo(0.30));
+      expect(p.density, lessThan(0.30));
+      expect(p.density, greaterThanOrEqualTo(0.18));
       expect(p.requiredTechniques.contains(_signPropagation), isTrue);
       expect(p.hardAcceptsAlternatives, isFalse);
       expect(p.requiredTechniques.contains(_advancedMidLine), isFalse);
@@ -64,8 +65,8 @@ void main() {
 
     test('band=3 (hard): low density, OR-set of advanced techniques', () {
       final p = mapper.mapToParams(DifficultyBand.hard);
-      expect(p.density, lessThanOrEqualTo(0.30));
-      expect(p.signDensity, lessThanOrEqualTo(0.20));
+      expect(p.density, lessThanOrEqualTo(0.20));
+      expect(p.signDensity, lessThanOrEqualTo(0.15));
       expect(p.hardAcceptsAlternatives, isTrue);
       expect(
         p.requiredTechniques,

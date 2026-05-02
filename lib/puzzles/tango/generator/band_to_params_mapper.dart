@@ -65,13 +65,11 @@ class BandToParamsMapper {
   GenerationParams mapToParams(DifficultyBand band) {
     switch (band) {
       case DifficultyBand.easy:
-        // Easy: dense board, lots of signs, only the elementary
-        // techniques required. ParityFill always fires on a solvable
-        // 6×6, so we list it last — the *real* signal is that the
-        // puzzle reaches PairCompletion / TrioAvoidance.
+        // Calibrated against LinkedIn Tango "easy": ~10–12 seeds out of
+        // 36 active cells (density ≈ 0.30) with moderate sign coverage.
         return GenerationParams(
-          density: 0.55,
-          signDensity: 0.35,
+          density: 0.30,
+          signDensity: 0.20,
           requiredTechniques: {
             _pairCompletion,
             _trioAvoidance,
@@ -79,11 +77,13 @@ class BandToParamsMapper {
           },
         );
       case DifficultyBand.medium:
-        // Medium: moderate density + SignPropagation must fire at least
-        // once. AE11 happy path checks this exactly.
+        // Medium: ~7–9 seeds (density ≈ 0.22), SignPropagation must
+        // fire. Sparser than the original 0.40 floor — the previous
+        // value left ~14 seeds, which players reported as trivially
+        // easy on first contact.
         return GenerationParams(
-          density: 0.40,
-          signDensity: 0.25,
+          density: 0.22,
+          signDensity: 0.15,
           requiredTechniques: {
             _pairCompletion,
             _trioAvoidance,
@@ -92,12 +92,11 @@ class BandToParamsMapper {
           },
         );
       case DifficultyBand.hard:
-        // Hard: sparse board, few signs, requires AdvancedMidLine OR
-        // ChainExtension. The OR is encoded via
-        // [hardAcceptsAlternatives].
+        // Hard: ~6 seeds (density ≈ 0.17), requires AdvancedMidLine OR
+        // ChainExtension.
         return GenerationParams(
-          density: 0.25,
-          signDensity: 0.15,
+          density: 0.17,
+          signDensity: 0.10,
           requiredTechniques: {
             _advancedMidLine,
             _chainExtension,
