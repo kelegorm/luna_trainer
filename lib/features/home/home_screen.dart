@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../full_game/full_game_launcher.dart';
+
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
 
@@ -15,7 +17,7 @@ class HomeScreen extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               FilledButton(
-                onPressed: () => _showStub(context, 'Full game'),
+                onPressed: () => launchFullGame(context),
                 child: const Padding(
                   padding: EdgeInsets.symmetric(vertical: 16),
                   child: Text('Full game'),

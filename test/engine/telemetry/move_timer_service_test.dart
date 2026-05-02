@@ -168,6 +168,95 @@ void main() {
     await timer.dispose();
     await timer.dispose(); // idempotent
   });
+
+  // ───────── R13 / AE2: hint step 4 pauses the move timer ─────────
+
+  test('pause/resume: 4s thinking, 6s paused, 2s thinking → latency=6s', () {
+    timer.startMove();
+    clock.advance(const Duration(seconds: 4));
+    timer.pause();
+    expect(timer.isPaused, isTrue);
+    clock.advance(const Duration(seconds: 6));
+    timer.resume();
+    expect(timer.isPaused, isFalse);
+    clock.advance(const Duration(seconds: 2));
+    final meta = timer.commitMove();
+
+    expect(
+      meta.latencyMs,
+      6000,
+      reason: 'wall-clock 12s − 6s paused = 6s reported',
+    );
+  });
+
+  test('pause/resume: idempotent — repeated pause keeps original start', () {
+    timer.startMove();
+    clock.advance(const Duration(seconds: 1));
+    timer.pause();
+    clock.advance(const Duration(seconds: 5));
+    timer.pause(); // second pause is no-op, must not reset start-of-pause
+    clock.advance(const Duration(seconds: 5));
+    timer.resume();
+    clock.advance(const Duration(seconds: 1));
+    final meta = timer.commitMove();
+
+    expect(
+      meta.latencyMs,
+      2000,
+      reason: '12s wall-clock − 10s paused = 2s; second pause is no-op',
+    );
+  });
+
+  test('resume without active pause is a no-op', () {
+    timer.startMove();
+    clock.advance(const Duration(seconds: 1));
+    timer.resume(); // no active pause — silently ignored
+    clock.advance(const Duration(seconds: 1));
+    final meta = timer.commitMove();
+
+    expect(meta.latencyMs, 2000);
+  });
+
+  test('dangling pause auto-closes at commitMove', () {
+    timer.startMove();
+    clock.advance(const Duration(seconds: 2));
+    timer.pause();
+    clock.advance(const Duration(seconds: 5));
+    // Forgot to call resume — commit must clamp the open pause window.
+    final meta = timer.commitMove();
+
+    expect(
+      meta.latencyMs,
+      2000,
+      reason: 'open pause window covers the trailing 5s and is subtracted',
+    );
+  });
+
+  test('latency clamped to 0 when paused longer than wall-clock cannot underflow',
+      () {
+    timer.startMove();
+    timer.pause();
+    clock.advance(const Duration(seconds: 5));
+    timer.resume();
+    final meta = timer.commitMove();
+
+    expect(meta.latencyMs, 0,
+        reason: 'all wall-clock was paused → reported 0ms, never negative');
+  });
+
+  test('startMove resets pause accumulator from a prior aborted move', () {
+    timer.startMove();
+    clock.advance(const Duration(seconds: 2));
+    timer.pause();
+    clock.advance(const Duration(seconds: 5));
+    // Restart without committing — pause state must not leak into next move.
+    timer.startMove();
+    expect(timer.isPaused, isFalse);
+    clock.advance(const Duration(seconds: 3));
+    final meta = timer.commitMove();
+
+    expect(meta.latencyMs, 3000);
+  });
 }
 
 class _FakeClock {
