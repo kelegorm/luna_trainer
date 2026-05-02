@@ -165,7 +165,11 @@ void main() {
     await db.close();
   });
 
-  FullGameBloc buildBloc({TangoPuzzle? puzzle}) {
+  FullGameBloc buildBloc({
+    TangoPuzzle? puzzle,
+    DifficultyBand band = DifficultyBand.medium,
+    bool userAdjusted = false,
+  }) {
     return FullGameBloc(
       sessionsRepository: sessionsRepo,
       moveEventsRepository: movesRepo,
@@ -174,6 +178,8 @@ void main() {
       masteryUpdater: mastery.call,
       levelGenerator: _StubGenerator(puzzle: puzzle ?? puzzleOneEmpty),
       clock: clock.now,
+      band: band,
+      userAdjusted: userAdjusted,
     );
   }
 
@@ -378,6 +384,70 @@ void main() {
       verify: (bloc) async {
         expect(bloc.state.status, FullGameStatus.completed);
         expect(mastery.events, hasLength(2));
+      },
+    );
+  });
+
+  // R38: post-session «Сложнее»/«Легче»/«Ещё такую же» проставляют
+  // user_adjusted=true на следующей партии. Контракт U11 — это
+  // значение наследуется session-row → каждым MoveEvent-ом партии,
+  // чтобы factorial-анализ мог отделить rotator-выбор от пользова-
+  // тельского nudge без JOIN-а.
+  group('R38 user_adjusted propagation', () {
+    blocTest<FullGameBloc, FullGameState>(
+      'user_adjusted=true at construction → session row carries it',
+      build: () => buildBloc(
+        band: DifficultyBand.hard,
+        userAdjusted: true,
+      ),
+      act: (bloc) => bloc.add(const GameStarted(seed: 1)),
+      wait: const Duration(milliseconds: 20),
+      verify: (bloc) async {
+        final row = await sessionsRepo.findById(bloc.state.sessionId!);
+        expect(row, isNotNull);
+        expect(row!.difficultyBand, DifficultyBand.hard.value);
+        expect(row.userAdjusted, isTrue);
+      },
+    );
+
+    blocTest<FullGameBloc, FullGameState>(
+      'user_adjusted=true → every MoveEvent of the session inherits it',
+      build: () => buildBloc(
+        puzzle: puzzleTwoEmpty,
+        band: DifficultyBand.easy,
+        userAdjusted: true,
+      ),
+      act: (bloc) async {
+        bloc.add(const GameStarted(seed: 2));
+        await Future<void>.delayed(Duration.zero);
+        bloc.add(const MoveCommitted(row: 0, col: 0, mark: TangoMark.sun));
+        await Future<void>.delayed(Duration.zero);
+        bloc.add(const MoveCommitted(row: 0, col: 1, mark: TangoMark.moon));
+      },
+      wait: const Duration(milliseconds: 50),
+      verify: (_) async {
+        final events = await db.select(db.moveEvents).get();
+        expect(events, hasLength(2));
+        for (final ev in events) {
+          expect(ev.difficultyBand, DifficultyBand.easy.value);
+          expect(ev.userAdjusted, isTrue);
+        }
+      },
+    );
+
+    blocTest<FullGameBloc, FullGameState>(
+      'default user_adjusted=false (rotator auto-pick) reaches MoveEvent',
+      build: () => buildBloc(band: DifficultyBand.hard),
+      act: (bloc) async {
+        bloc.add(const GameStarted(seed: 1));
+        await Future<void>.delayed(Duration.zero);
+        bloc.add(const MoveCommitted(row: 0, col: 0, mark: TangoMark.sun));
+      },
+      wait: const Duration(milliseconds: 20),
+      verify: (_) async {
+        final ev = (await db.select(db.moveEvents).get()).single;
+        expect(ev.difficultyBand, DifficultyBand.hard.value);
+        expect(ev.userAdjusted, isFalse);
       },
     );
   });

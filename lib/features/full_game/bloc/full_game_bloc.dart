@@ -259,6 +259,7 @@ class FullGameBloc extends Bloc<FullGameEvent, FullGameState> {
     TangoLevelGenerator? levelGenerator,
     TangoSolver solver = const TangoSolver(),
     DifficultyBand band = DifficultyBand.medium,
+    bool userAdjusted = false,
     DateTime Function() clock = _systemClock,
   })  : _sessions = sessionsRepository,
         _moves = moveEventsRepository,
@@ -268,6 +269,7 @@ class FullGameBloc extends Bloc<FullGameEvent, FullGameState> {
         _generator = levelGenerator ?? const TangoLevelGenerator(),
         _solver = solver,
         _band = band,
+        _userAdjusted = userAdjusted,
         _clock = clock,
         super(const FullGameState()) {
     on<GameStarted>(_onGameStarted);
@@ -286,6 +288,14 @@ class FullGameBloc extends Bloc<FullGameEvent, FullGameState> {
   final TangoLevelGenerator _generator;
   final TangoSolver _solver;
   final DifficultyBand _band;
+
+  /// Was [_band] reached via post-session «Сложнее»/«Легче»/«Ещё такую же»
+  /// rather than the rotator's auto-pick? Denormalized onto every
+  /// `MoveEvent` of this session (R38) so factorial analysis can split
+  /// rotator-driven vs. user-nudged distributions without joining
+  /// against `sessions`.
+  final bool _userAdjusted;
+
   final DateTime Function() _clock;
 
   /// Контекст последнего хода — нужен MoveModeClassifier-у.
@@ -326,6 +336,7 @@ class FullGameBloc extends Bloc<FullGameEvent, FullGameState> {
         mode: 'full_game',
         startedAt: _clock(),
         band: _band.value,
+        userAdjusted: _userAdjusted,
       );
       _previousMove = null;
       _pendingHintStep = 0;
@@ -400,7 +411,7 @@ class FullGameBloc extends Bloc<FullGameEvent, FullGameState> {
       mode: mode,
       eventKind: MoveEventKind.production,
       difficultyBand: _band.value,
-      userAdjusted: false,
+      userAdjusted: _userAdjusted,
     );
 
     // Stream mastery per-move (was: batched at GameCompleted). Batching
