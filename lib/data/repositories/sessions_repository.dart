@@ -1,5 +1,6 @@
 import 'package:drift/drift.dart';
 
+import '../../puzzles/tango/generator/difficulty_band.dart';
 import '../database.dart';
 
 /// Authoritative session lifecycle: create on game start, mark ended
@@ -38,6 +39,20 @@ class SessionsRepository {
   Future<SessionRow?> findById(int id) {
     return (_db.select(_db.sessions)..where((t) => t.id.equals(id)))
         .getSingleOrNull();
+  }
+
+  /// Returns up to [limit] most-recent full-game session bands, newest
+  /// first. Drives [BandRotator] hydration so round-robin survives
+  /// Android process-kill (R34). Drill sessions are excluded — they
+  /// always run with `band=2, user_adjusted=false` and would skew the
+  /// rotator's view of full-game history.
+  Future<List<DifficultyBand>> recentBands({int limit = 5}) async {
+    final query = _db.select(_db.sessions)
+      ..where((t) => t.mode.equals('full_game'))
+      ..orderBy([(t) => OrderingTerm.desc(t.startedAt)])
+      ..limit(limit);
+    final rows = await query.get();
+    return rows.map((r) => DifficultyBand.clamp(r.difficultyBand)).toList();
   }
 
   Future<void> markEnded({
