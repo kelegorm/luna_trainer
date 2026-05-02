@@ -2,8 +2,10 @@ import 'package:flutter/widgets.dart';
 
 import '../../engine/domain/heuristic.dart';
 import '../../puzzle/puzzle_kind.dart';
+import 'domain/tango_position.dart';
 import 'generator/tango_level_generator.dart';
 import 'solver/tango_solver.dart';
+import 'widgets/tango_board.dart';
 
 /// Catalog of MVP heuristics for Tango (R2). `Composite(unknown)` is
 /// logged for diagnostics but not eligible for drill (R10).
@@ -62,7 +64,13 @@ class TangoPuzzleKind extends PuzzleKind {
 
   @override
   Widget renderBoard(Position position, void Function(Move move) onMove) {
-    throw UnimplementedError('Tango board renderer lands in U10.');
+    if (position is! TangoPosition) {
+      throw ArgumentError(
+        'TangoPuzzleKind.renderBoard expects a TangoPosition, '
+        'got ${position.runtimeType}',
+      );
+    }
+    return TangoBoard(position: position, onMove: onMove);
   }
 
   @override

@@ -8,6 +8,10 @@ import 'tango_position.dart';
 /// A single placement on the Tango board. Lives here (rather than in a
 /// dedicated file) because the rule-checker is the only consumer in U4;
 /// future modules import it from this file.
+///
+/// [mark] is nullable to encode the input-handler's empty step in the
+/// `empty → sun → moon → empty` cycle (U10): tapping a moon clears the
+/// cell, which is a legal "move" from the board widget's perspective.
 class TangoMove extends Move with EquatableMixin {
   const TangoMove({
     required this.row,
@@ -17,7 +21,7 @@ class TangoMove extends Move with EquatableMixin {
 
   final int row;
   final int col;
-  final TangoMark mark;
+  final TangoMark? mark;
 
   @override
   List<Object?> get props => [row, col, mark];
