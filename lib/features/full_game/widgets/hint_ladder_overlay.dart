@@ -1,20 +1,23 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../../puzzle/puzzle_kind.dart';
 import '../../../puzzles/tango/domain/tango_position.dart';
 import '../../../puzzles/tango/solver/tango_deduction.dart';
+import '../../../puzzles/tango/tango_puzzle_kind.dart';
 import '../bloc/full_game_bloc.dart';
-import 'training_field.dart';
 
 /// Лесенка hint-ов (R12, R13, AE2). 4 шага:
 ///
-/// 1. Имя heuristic-а («это ParityFill»).
-/// 2. Preconditions на учебной мини-доске (TrainingField). Основная
-///    доска не пачкается.
+/// 1. Имя heuristic-а — берётся через `PuzzleKind.displayNameFor` (R33),
+///    fallback на `tagId` для нештатных эвристик.
+/// 2. Preconditions на учебной мини-доске. Основная доска не пачкается.
+///    Виджет получаем через `PuzzleKind.renderHintField` (R26).
 /// 3. Optimal move — какую клетку и в какой mark поставить.
 /// 4. Explanation. **На этом шаге Bloc паузит move-таймер** (R13).
 ///
 /// Все state-переходы делаются через FullGameBloc.add(...).
+const PuzzleKind _tangoKind = TangoPuzzleKind();
 class HintLadderOverlay extends StatelessWidget {
   const HintLadderOverlay({super.key});
 
@@ -124,8 +127,10 @@ class _StepName extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final label = _tangoKind.displayNameFor(deduction.heuristic) ??
+        deduction.heuristic.tagId;
     return Text(
-      'Technique: ${deduction.heuristic.tagId}',
+      'Technique: $label',
       style: Theme.of(context).textTheme.bodyLarge,
     );
   }
@@ -145,7 +150,7 @@ class _StepPreconds extends StatelessWidget {
         const SizedBox(height: 12),
         ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 300),
-          child: TrainingField(position: position, deduction: deduction),
+          child: _tangoKind.renderHintField(position, deduction),
         ),
       ],
     );

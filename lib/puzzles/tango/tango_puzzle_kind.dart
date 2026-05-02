@@ -4,8 +4,10 @@ import '../../engine/domain/heuristic.dart';
 import '../../puzzle/puzzle_kind.dart';
 import 'domain/tango_position.dart';
 import 'generator/tango_level_generator.dart';
+import 'solver/tango_deduction.dart';
 import 'solver/tango_solver.dart';
 import 'widgets/tango_board.dart';
+import 'widgets/tango_hint_field.dart';
 
 /// Catalog of MVP heuristics for Tango (R2). `Composite(unknown)` is
 /// logged for diagnostics but not eligible for drill (R10).
@@ -94,6 +96,18 @@ class TangoPuzzleKind extends PuzzleKind {
 
   @override
   Widget renderHintField(Position position, Deduction deduction) {
-    throw UnimplementedError('Tango hint field lands in U10/U11.');
+    if (position is! TangoPosition) {
+      throw ArgumentError(
+        'TangoPuzzleKind.renderHintField expects a TangoPosition, '
+        'got ${position.runtimeType}',
+      );
+    }
+    if (deduction is! TangoDeduction) {
+      throw ArgumentError(
+        'TangoPuzzleKind.renderHintField expects a TangoDeduction, '
+        'got ${deduction.runtimeType}',
+      );
+    }
+    return TangoHintField(position: position, deduction: deduction);
   }
 }

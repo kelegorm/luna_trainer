@@ -131,6 +131,41 @@ void main() {
       // U6: generator is the concrete TangoLevelGenerator.
       expect(kind.generator, isA<TangoLevelGenerator>());
     });
+
+    test('displayNameFor returns the catalog displayName (R33)', () {
+      const kind = TangoPuzzleKind();
+
+      expect(
+        kind.displayNameFor(const Heuristic('tango', 'ParityFill')),
+        'Баланс линии',
+      );
+      expect(
+        kind.displayNameFor(
+          const Heuristic('tango', 'AdvancedMidLineInference/edge_1_5'),
+        ),
+        'Краевая ловушка 1–5',
+      );
+      expect(
+        kind.displayNameFor(
+          const Heuristic('tango', 'AdvancedMidLineInference/edge_2_6'),
+        ),
+        'Краевая ловушка 2–6',
+      );
+    });
+
+    test('displayNameFor returns null for uncatalogued heuristics (R33)', () {
+      const kind = TangoPuzzleKind();
+
+      expect(
+        kind.displayNameFor(const Heuristic('tango', 'NonexistentTechnique')),
+        isNull,
+      );
+      // Cross-kind lookup must not match by tagId alone.
+      expect(
+        kind.displayNameFor(const Heuristic('queens', 'ParityFill')),
+        isNull,
+      );
+    });
   });
 }
 

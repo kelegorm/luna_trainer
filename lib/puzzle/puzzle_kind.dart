@@ -69,4 +69,14 @@ abstract class PuzzleKind {
 
   Widget renderBoard(Position position, void Function(Move move) onMove);
   Widget renderHintField(Position position, Deduction deduction);
+
+  /// Player-facing label for [h] from the kind's [heuristics] catalog
+  /// (R33). Returns `null` if the heuristic is not catalogued — callers
+  /// fall back to `heuristic.tagId` for diagnostics.
+  String? displayNameFor(Heuristic h) {
+    for (final d in heuristics) {
+      if (d.heuristic == h) return d.displayName;
+    }
+    return null;
+  }
 }
